@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "OpenCode 提问导航",
+  "version": "0.1.0",
+  "description": "在 opencode pair 网页右侧显示提问导航，快速定位历史消息。",
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
