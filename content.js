@@ -14,6 +14,8 @@
   const ROUTE_INTERVAL = 500;
   const TAIL_DEBOUNCE = 500;
   const HTTP_TIMEOUT = 15000;
+  const JUMP_LOAD_TIMEOUT = 10000;
+  const JUMP_SEARCH_TIMEOUT = 6000;
   const LOG_PREFIX = '[OC Prompt Nav]';
 
   const CSS = `
@@ -47,6 +49,7 @@
       scrollbar-width: none;
       outline: none;
       transform: translateY(-50%);
+      z-index: 3;
       animation: oc-pn-rail-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
     }
 
@@ -123,6 +126,23 @@
       background: var(--v2-text-text-base, #111);
     }
 
+    .item[data-jumping='true']::before {
+      right: 0;
+      width: 32px;
+      background: var(--v2-text-text-base, #111);
+      animation: oc-pn-jump-pulse 800ms ease-in-out infinite;
+    }
+
+    @keyframes oc-pn-jump-pulse {
+      0%,
+      100% {
+        opacity: 0.3;
+      }
+      50% {
+        opacity: 1;
+      }
+    }
+
     .item:active::before {
       opacity: 0.6;
       transition-duration: 80ms;
@@ -151,7 +171,7 @@
       color: var(--v2-text-text-base, #111);
       font: 13px/1.55 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
       pointer-events: none;
-      z-index: 1;
+      z-index: 4;
       opacity: 0;
       visibility: hidden;
       transform: translateY(-2px) scale(0.99);
@@ -186,12 +206,108 @@
       white-space: normal;
     }
 
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      max-width: min(460px, calc(100vw - 48px));
+      padding: 8px 14px;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-strong, rgba(128, 128, 128, 0.25)) 18%,
+          transparent
+        );
+      border-radius: 10px;
+      background: var(--v2-background-bg-layer-01, #fff);
+      box-shadow: var(--v2-elevation-raised, 0 6px 18px rgba(0, 0, 0, 0.12));
+      color: var(--v2-text-text-base, #111);
+      font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+      text-align: center;
+      pointer-events: none;
+      z-index: 5;
+      opacity: 0;
+      visibility: hidden;
+      transform: translate(-50%, 6px);
+      transition:
+        opacity 140ms ease,
+        transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        visibility 0s linear 160ms;
+    }
+
+    .toast[data-open='true'] {
+      opacity: 1;
+      visibility: visible;
+      transform: translate(-50%, 0);
+      transition:
+        opacity 140ms ease,
+        transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        visibility 0s;
+    }
+
+    .jump-overlay {
+      position: fixed;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      background: var(--v2-background-bg-base, #fff);
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition:
+        opacity 120ms ease,
+        visibility 0s linear 120ms;
+    }
+
+    .jump-overlay[data-open='true'] {
+      opacity: 1;
+      visibility: visible;
+      transition:
+        opacity 120ms ease,
+        visibility 0s;
+    }
+
+    .jump-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--v2-text-text-muted, #666);
+      font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    }
+
+    .jump-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid
+        color-mix(
+          in srgb,
+          var(--v2-text-text-muted, #666) 24%,
+          transparent
+        );
+      border-top-color: var(--v2-text-text-muted, #666);
+      border-radius: 50%;
+      animation: oc-pn-spin 700ms linear infinite;
+    }
+
+    @keyframes oc-pn-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .rail,
       .item::before,
-      .preview {
+      .preview,
+      .toast {
         animation: none;
         transition: none;
+      }
+
+      .jump-spinner {
+        animation-duration: 1400ms;
       }
     }
   `;
@@ -280,6 +396,12 @@
     previewTimer: 0,
     lastTailError: null,
     selectionLock: null,
+    jumpToken: 0,
+    jumpingID: null,
+    ignoreUserIntent: false,
+    toast: null,
+    toastTimer: 0,
+    jumpOverlay: null,
   };
 
   function log(...args) {
@@ -483,7 +605,25 @@
     previewText.className = 'text';
     preview.append(previewText);
 
-    shadow.append(rail, preview);
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.dataset.open = 'false';
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'jump-overlay';
+    overlay.dataset.open = 'false';
+    const overlayStatus = document.createElement('div');
+    overlayStatus.className = 'jump-status';
+    const overlaySpinner = document.createElement('span');
+    overlaySpinner.className = 'jump-spinner';
+    const overlayLabel = document.createElement('span');
+    overlayLabel.textContent = '正在定位提问…';
+    overlayStatus.append(overlaySpinner, overlayLabel);
+    overlay.append(overlayStatus);
+
+    shadow.append(rail, preview, overlay, toast);
     document.body.appendChild(host);
 
     state.host = host;
@@ -491,6 +631,8 @@
     state.rail = rail;
     state.preview = preview;
     state.previewText = previewText;
+    state.jumpOverlay = overlay;
+    state.toast = toast;
 
     log('导航界面已创建');
   }
@@ -667,44 +809,410 @@
     }
   }
 
-  /** 跳转到指定提问。 */
-  function jumpTo(id) {
-    if (!id) return;
-    // 锁定用户主动选择，直到用户再次滚动时间线或使用方向键
-    state.selectionLock = id;
-    setActive(id, true);
+  /** 等待指定毫秒。 */
+  function delay(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
 
-    const hash = `#message-${id}`;
-    if (location.hash === hash) {
-      const element = document.getElementById(`message-${id}`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'auto', block: 'start' });
-        return;
+  /** 等待虚拟列表完成一次渲染更新；后台标签页 rAF 暂停时用定时器兜底。 */
+  function nextFrame() {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      window.requestAnimationFrame(() => window.requestAnimationFrame(finish));
+      window.setTimeout(finish, 150);
+    });
+  }
+
+  /** 计算时间线可滚动的最大位置。 */
+  function maxScrollTop(scroller) {
+    return Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  }
+
+  /** 查找消息对应的已渲染时间线行；压缩摘要行没有 message-<id> 锚点。 */
+  function findMessageRow(id) {
+    const anchor = document.getElementById(`message-${id}`);
+    if (anchor) return anchor;
+    // 不能依赖 CSS.escape：OpenCode 页面里的全局 CSS 可能被覆盖
+    for (const row of document.querySelectorAll(
+      '[data-timeline-row][data-message-id]',
+    )) {
+      if (row.dataset.messageId === id) return row;
+    }
+    return null;
+  }
+
+  /** 返回提问在 rail 列表中的顺序，找不到时返回 -1。 */
+  function findItemIndex(id) {
+    return state.items.findIndex((item) => item.id === id);
+  }
+
+  /** 返回时间线中已渲染的用户提问顺序。 */
+  function renderedUserIndexes(scroller) {
+    const indexes = [];
+    for (const row of scroller.querySelectorAll(
+      '[data-timeline-row="UserMessage"][data-message-id]',
+    )) {
+      const index = findItemIndex(row.dataset.messageId);
+      if (index >= 0) indexes.push(index);
+    }
+    return indexes;
+  }
+
+  /** 派发一次向上滚轮事件，取消 OpenCode 的自动跟随。 */
+  function unpinTimeline(scroller) {
+    state.ignoreUserIntent = true;
+    try {
+      scroller.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: -120,
+          deltaMode: 0,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    } catch (error) {
+      warn('取消时间线自动跟随失败', error);
+    } finally {
+      state.ignoreUserIntent = false;
+    }
+  }
+
+  /** 设置正在跳转的横条，显示脉冲反馈。 */
+  function setJumping(id) {
+    state.jumpingID = id;
+    for (const [itemID, button] of state.buttons) {
+      if (itemID === id) {
+        button.dataset.jumping = 'true';
+      } else {
+        delete button.dataset.jumping;
+      }
+    }
+  }
+
+  /** 展示短暂的提示信息。 */
+  function showToast(text) {
+    if (!state.toast) return;
+    state.toast.textContent = text;
+    state.toast.dataset.open = 'true';
+    window.clearTimeout(state.toastTimer);
+    state.toastTimer = window.setTimeout(() => {
+      state.toastTimer = 0;
+      if (state.toast) state.toast.dataset.open = 'false';
+    }, 2600);
+  }
+
+  /** 隐藏提示信息。 */
+  function hideToast() {
+    window.clearTimeout(state.toastTimer);
+    state.toastTimer = 0;
+    if (state.toast) state.toast.dataset.open = 'false';
+  }
+
+  /** 读取时间线所在面板的背景色，避免遮罩与主题不一致。 */
+  function resolveTimelineBackground(element) {
+    let node = element;
+    while (node && node !== document.documentElement) {
+      const color = window.getComputedStyle(node).backgroundColor;
+      if (color && color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') {
+        return color;
+      }
+      node = node.parentElement;
+    }
+    return window.getComputedStyle(document.body).backgroundColor || '#fff';
+  }
+
+  /** 把跳转遮罩定位到时间线视口，保留顶部会话标题。 */
+  function positionJumpOverlay(scroller) {
+    const overlay = state.jumpOverlay;
+    if (!overlay || !scroller) return;
+
+    const rect = scroller.getBoundingClientRect();
+    const header = scroller.querySelector('[data-session-title]');
+    const headerHeight = header instanceof HTMLElement ? header.offsetHeight : 0;
+    overlay.style.left = `${Math.round(rect.left)}px`;
+    overlay.style.top = `${Math.round(rect.top + headerHeight)}px`;
+    overlay.style.width = `${Math.round(rect.width)}px`;
+    overlay.style.height = `${Math.max(0, Math.round(rect.height - headerHeight))}px`;
+    overlay.style.background = resolveTimelineBackground(scroller);
+  }
+
+  /** 显示跳转遮罩，隐藏中间的滚动和虚拟列表刷新。 */
+  function showJumpOverlay(scroller) {
+    const overlay = state.jumpOverlay;
+    if (!overlay) return;
+    positionJumpOverlay(scroller);
+    overlay.dataset.open = 'true';
+  }
+
+  /** 隐藏跳转遮罩。 */
+  function hideJumpOverlay() {
+    if (state.jumpOverlay) state.jumpOverlay.dataset.open = 'false';
+  }
+
+  /** 滚动到指定位置；如果被自动跟随拉回，则重新取消跟随。 */
+  async function scrollTimeline(scroller, top) {
+    const next = Math.max(0, Math.min(maxScrollTop(scroller), Math.round(top)));
+    scroller.scrollTop = next;
+    await nextFrame();
+    if (Math.abs(scroller.scrollTop - next) > 4) {
+      unpinTimeline(scroller);
+      scroller.scrollTop = next;
+      await nextFrame();
+    }
+  }
+
+  /** 在当前位置附近小范围查找目标行。 */
+  async function quickSearchMessage(scroller, id, token) {
+    let row = findMessageRow(id);
+    if (row) return row;
+
+    const step = Math.max(240, Math.round(scroller.clientHeight * 0.75));
+    const origin = scroller.scrollTop;
+    const seen = new Set();
+
+    for (let i = 0; i < 8; i++) {
+      if (token !== state.jumpToken) return null;
+      const distance = Math.ceil((i + 1) / 2) * step;
+      const top = origin + (i % 2 === 0 ? 1 : -1) * distance;
+      const clamped = Math.max(0, Math.min(maxScrollTop(scroller), Math.round(top)));
+      if (seen.has(clamped)) continue;
+      seen.add(clamped);
+      await scrollTimeline(scroller, clamped);
+      row = findMessageRow(id);
+      if (row) return row;
+    }
+    return null;
+  }
+
+  /** 向上加载更早的历史，直到目标消息渲染或已经到达加载范围。 */
+  async function loadUntilMessage(scroller, id, index, token) {
+    let row = findMessageRow(id);
+    if (row) return { row, earliest: null };
+
+    const startedAt = Date.now();
+    let lastHeight = scroller.scrollHeight;
+    let lastGrowth = Date.now();
+    let earliest = null;
+
+    for (let i = 0; i < 600; i++) {
+      if (token !== state.jumpToken) return { row: null, earliest };
+      if (Date.now() - startedAt > JUMP_LOAD_TIMEOUT) break;
+
+      // 连续贴住顶部，OpenCode 会在每次加载完成后继续加载上一页
+      // 会话输出过程中它可能重新跟随底部，定期再取消一次
+      if (i % 12 === 0) unpinTimeline(scroller);
+      scroller.scrollTop = 0;
+      await delay(40);
+
+      row = findMessageRow(id);
+      if (row) return { row, earliest };
+
+      if (i % 4 !== 0) continue;
+      const height = scroller.scrollHeight;
+      if (height !== lastHeight) {
+        lastHeight = height;
+        lastGrowth = Date.now();
       }
 
-      // 目标行被虚拟化卸载时，改变 history.state 让 Router 重新处理同一个 hash
-      try {
-        history.replaceState(
-          { ...(history.state || {}), __ocPromptNav: Date.now() },
-          '',
-          location.href,
-        );
-      } catch (error) {
-        warn('更新地址栏状态失败', error);
-      }
-      window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
-      return;
+      const indexes = renderedUserIndexes(scroller);
+      if (indexes.length) earliest = Math.min(...indexes);
+      if (index >= 0 && earliest !== null && earliest <= index) break;
+      if (Date.now() - lastGrowth > 4000 && i > 8) break;
     }
 
+    return { row: findMessageRow(id), earliest };
+  }
+
+  /** 按提问在会话中的大致比例估算位置，再向两侧搜索目标行。 */
+  async function searchMessageByEstimate(scroller, id, index, earliest, token) {
+    let row = findMessageRow(id);
+    if (row) return row;
+
+    const total = state.items.length;
+    const startIndex = Math.max(0, earliest ?? 0);
+    const span = Math.max(1, total - startIndex);
+    const ratio =
+      index >= 0 && total > 0
+        ? Math.max(0, Math.min(1, (index - startIndex + 0.5) / span))
+        : 0.5;
+    const estimate = Math.round(maxScrollTop(scroller) * ratio);
+    const step = Math.max(260, Math.round(scroller.clientHeight * 0.8));
+    const seen = new Set();
+    const startedAt = Date.now();
+
+    for (let i = 0; i < 160; i++) {
+      if (token !== state.jumpToken) return null;
+      if (Date.now() - startedAt > JUMP_SEARCH_TIMEOUT) break;
+
+      const distance = Math.ceil(i / 2) * step;
+      if (
+        i > 0 &&
+        estimate - distance < 0 &&
+        estimate + distance > maxScrollTop(scroller)
+      ) {
+        break;
+      }
+
+      const top =
+        i === 0 ? estimate : estimate + (i % 2 === 1 ? -distance : distance);
+      const clamped = Math.max(0, Math.min(maxScrollTop(scroller), Math.round(top)));
+      if (seen.has(clamped)) continue;
+      seen.add(clamped);
+
+      await scrollTimeline(scroller, clamped);
+      row = findMessageRow(id);
+      if (row) return row;
+    }
+    return null;
+  }
+
+  /** 判断目标行是否已对齐；已到时间线底部时只要目标可见即可。 */
+  function isMessageAligned(scroller, row) {
+    const header = scroller.querySelector('[data-session-title]');
+    const headerHeight = header instanceof HTMLElement ? header.offsetHeight : 0;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    const top = scrollerRect.top + headerHeight;
+    if (Math.abs(rowRect.top - top) <= 2) return true;
+    if (scroller.scrollTop >= maxScrollTop(scroller) - 1) {
+      return rowRect.top >= top - 2 && rowRect.top < scrollerRect.bottom;
+    }
+    return false;
+  }
+
+  /** 精确对齐目标行，扣除顶部 sticky 会话标题的高度。 */
+  async function alignMessage(scroller, id, token) {
+    for (let i = 0; i < 4; i++) {
+      if (token !== state.jumpToken) return false;
+      const row = findMessageRow(id);
+      if (!row) return false;
+
+      const header = scroller.querySelector('[data-session-title]');
+      const headerHeight = header instanceof HTMLElement ? header.offsetHeight : 0;
+      const scrollerRect = scroller.getBoundingClientRect();
+      const delta =
+        row.getBoundingClientRect().top -
+        scrollerRect.top +
+        scroller.scrollTop -
+        headerHeight;
+
+      scroller.scrollTop = Math.max(
+        0,
+        Math.min(maxScrollTop(scroller), Math.round(delta)),
+      );
+      await nextFrame();
+      await delay(50);
+
+      const nextRow = findMessageRow(id);
+      if (!nextRow) return false;
+      if (isMessageAligned(scroller, nextRow)) return true;
+    }
+
+    const row = findMessageRow(id);
+    return row ? isMessageAligned(scroller, row) : false;
+  }
+
+  /** 把地址栏同步到目标消息；不派发 popstate，避免 OpenCode 再次接管滚动。 */
+  function updateMessageHash(id) {
+    const hash = `#message-${id}`;
+    if (location.hash === hash) return;
     try {
       history.replaceState(history.state, '', location.pathname + location.search + hash);
     } catch (error) {
       warn('更新地址栏失败', error);
     }
+  }
 
-    // OpenCode 的 Solid Router 只监听 popstate，需要手动派发一次
-    window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
-    log('跳转到提问', id);
+  /** 跳转到指定提问。 */
+  async function jumpTo(id) {
+    if (!id) return;
+
+    const token = ++state.jumpToken;
+    // 锁定用户主动选择，直到用户再次滚动时间线或使用方向键
+    state.selectionLock = id;
+    setActive(id, true);
+    setJumping(id);
+
+    const scroller = ensureScroller();
+    if (!scroller) {
+      setJumping(null);
+      showToast('当前页面没有可跳转的会话时间线');
+      return;
+    }
+
+    try {
+      // 先取消 OpenCode 的自动跟随，否则滚动会被拉回底部
+      unpinTimeline(scroller);
+      state.selectionLock = id;
+      setActive(id, false);
+      await nextFrame();
+      if (token !== state.jumpToken) return;
+
+      const index = findItemIndex(id);
+      let row = findMessageRow(id);
+      if (!row) {
+        // 目标不可见时后续会搜索或加载历史，用遮罩盖住中间滚动过程
+        showJumpOverlay(scroller);
+        row = await quickSearchMessage(scroller, id, token);
+      }
+
+      let earliest = null;
+      if (!row) {
+        const loaded = await loadUntilMessage(scroller, id, index, token);
+        row = loaded.row;
+        earliest = loaded.earliest;
+      }
+
+      if (!row) {
+        row = await searchMessageByEstimate(scroller, id, index, earliest, token);
+      }
+
+      if (token !== state.jumpToken) return;
+      if (!row) {
+        showToast('该提问不在当前会话时间线中，无法定位');
+        warn('跳转失败：时间线中找不到目标消息', id);
+        return;
+      }
+
+      let aligned = await alignMessage(scroller, id, token);
+      if (token !== state.jumpToken) return;
+
+      // 虚拟列表高度变化导致目标行被回收时，重新定位一次
+      if (!aligned) {
+        row = await searchMessageByEstimate(scroller, id, index, earliest, token);
+        if (row) aligned = await alignMessage(scroller, id, token);
+        if (token !== state.jumpToken) return;
+      }
+
+      updateMessageHash(id);
+      if (!aligned) warn('跳转位置未能完全对齐', id);
+
+      // 会话压缩后，触发压缩的提问会被压缩摘要行替代，没有原始 user 消息锚点
+      if (!document.getElementById(`message-${id}`)) {
+        showToast('该提问位于会话压缩前，已定位到压缩摘要');
+      }
+
+      log('跳转到提问完成', {
+        id,
+        scrollTop: Math.round(scroller.scrollTop),
+        aligned,
+      });
+    } catch (error) {
+      if (token === state.jumpToken) {
+        warn('跳转提问失败', error);
+        showToast('跳转失败，请重试');
+      }
+    } finally {
+      if (token === state.jumpToken) {
+        setJumping(null);
+        hideJumpOverlay();
+      }
+    }
   }
 
   /** 从地址栏 hash 同步 active 状态。 */
@@ -773,6 +1281,7 @@
 
   /** 用户主动滚动时间线时解除点击锁定。 */
   function onUserScrollIntent() {
+    if (state.ignoreUserIntent) return;
     state.selectionLock = null;
     scheduleActiveUpdate();
   }
@@ -1569,6 +2078,14 @@
     state.tailLoading = false;
     state.lastTailError = null;
     state.selectionLock = null;
+    state.jumpToken += 1;
+    state.jumpingID = null;
+    state.ignoreUserIntent = false;
+    for (const button of state.buttons.values()) {
+      delete button.dataset.jumping;
+    }
+    hideJumpOverlay();
+    hideToast();
     hidePreview();
   }
 
