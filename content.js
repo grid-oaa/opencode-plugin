@@ -196,6 +196,66 @@
     }
   `;
 
+  const OPTIMIZE_CSS = `
+    .oc-pn-optimize {
+      margin-right: 4px;
+    }
+
+    .oc-pn-optimize[data-status='loading'] {
+      cursor: progress;
+    }
+
+    .oc-pn-optimize[data-status='loading']:disabled {
+      opacity: 0.75;
+    }
+
+    .oc-pn-optimize[data-status='error'] {
+      outline: 2px solid #c0392b;
+      outline-offset: 2px;
+    }
+
+    .oc-pn-optimize-spinner {
+      display: block;
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: oc-pn-optimize-spin 0.8s linear infinite;
+    }
+
+    @keyframes oc-pn-optimize-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .oc-pn-optimize-spinner {
+        animation-duration: 1.6s;
+      }
+    }
+  `;
+
+  const OPTIMIZE_ICONS = {
+    idle: `<svg data-slot="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`,
+    loading: `<span class="oc-pn-optimize-spinner" aria-hidden="true"></span>`,
+    optimized: `<svg data-slot="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 14 4 9l5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    error: `<svg data-slot="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`,
+  };
+
+  const OPTIMIZE_INSTRUCTION = [
+    'You are a prompt editor for the next user message.',
+    'Rewrite the text inside <draft> so it is clear, specific, and logically structured.',
+    'You may reorganize sentences and use short paragraphs or lists only to organize the existing content.',
+    'Work only from the draft. Do not answer the draft, and do not add requirements, facts, steps, or context that are not present in the draft.',
+    'Keep every placeholder matching [[OC_MENTION_N]] exactly as-is, exactly once, and in a natural position.',
+    'Do not wrap placeholders in quotes, backticks, or code blocks.',
+    'Do not call any tools.',
+    'Output only the rewritten prompt; no explanations or prefixes.',
+  ].join('\n');
+  const OPTIMIZE_TIMEOUT = 60000;
+
   const state = {
     sessionID: null,
     items: [],
@@ -262,6 +322,37 @@
         credentials: 'same-origin',
         cache: 'no-store',
         headers: { accept: 'application/json' },
+        signal: controller.signal,
+      });
+
+      if (response.status === 401) throw new Error('UNAUTHORIZED');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) throw new Error('UNAUTHORIZED');
+      return await response.json();
+    } finally {
+      window.clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
+  /** 发送同源 POST JSON 请求，用于一次性的提示词优化。 */
+  async function postJSON(path, body, signal) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), OPTIMIZE_TIMEOUT);
+    const onAbort = () => controller.abort();
+    if (signal?.aborted) controller.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    try {
+      const requestURL = new URL(path, location.origin).toString();
+      const response = await fetch(requestURL, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
@@ -798,6 +889,652 @@
     return state.items[0]?.id ?? null;
   }
 
+  const optimizeTasks = new Map();
+
+  /** 获取当前会话对应的优化任务，不存在则创建。 */
+  function getOptimizeTask(sessionID) {
+    let task = optimizeTasks.get(sessionID);
+    if (task) return task;
+
+    task = {
+      sessionID,
+      status: 'idle',
+      editor: null,
+      actions: null,
+      button: null,
+      inputHandler: null,
+      original: null,
+      resultText: '',
+      pendingTimer: 0,
+      abort: null,
+      writing: false,
+      errorText: '',
+      errorUntil: 0,
+      errorTimer: 0,
+    };
+    optimizeTasks.set(sessionID, task);
+    return task;
+  }
+
+  /** 判断元素当前是否可见，用于定位活动的 Composer。 */
+  function isOptimizeVisible(element) {
+    if (!element || !element.isConnected) return false;
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    const style = window.getComputedStyle(element);
+    return style.visibility !== 'hidden' && style.display !== 'none';
+  }
+
+  /** 注入提示词优化按钮的样式。 */
+  function ensureOptimizeStyles() {
+    const existing = document.getElementById('oc-pn-optimize-style');
+    if (existing) {
+      existing.textContent = OPTIMIZE_CSS;
+      return;
+    }
+    const style = document.createElement('style');
+    style.id = 'oc-pn-optimize-style';
+    style.textContent = OPTIMIZE_CSS;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  /** 找到当前活动的 Composer 操作栏和编辑器。 */
+  function findActiveComposer() {
+    const actionsList = [
+      ...document.querySelectorAll('[data-slot="composer-actions"]'),
+    ].filter(isOptimizeVisible);
+
+    for (const actions of actionsList) {
+      const form = actions.closest('form[data-component="composer"]');
+      const editor = form?.querySelector('[data-component="composer-editor"]');
+      if (editor && isOptimizeVisible(editor)) return { actions, editor, form };
+    }
+    return null;
+  }
+
+  /** 把当前会话任务绑定到活动的 Composer，不取消其他 tab 的任务。 */
+  function bindOptimizeTask(task, composer) {
+    if (task.editor !== composer.editor) {
+      if (task.editor && task.inputHandler) {
+        task.editor.removeEventListener('input', task.inputHandler);
+      }
+      task.editor = composer.editor;
+      task.inputHandler = () => onOptimizeEditorInput(task);
+      composer.editor.addEventListener('input', task.inputHandler);
+
+      // 编辑器被重建时，无法保证原 mention 节点仍然有效，保守放弃撤回状态
+      if (task.status === 'optimized') {
+        task.status = 'idle';
+        task.original = null;
+      }
+    }
+
+    task.actions = composer.actions;
+    ensureOptimizeStyles();
+
+    let button = task.button;
+    if (!button || !button.isConnected || button.parentElement !== composer.actions) {
+      if (button) button.remove();
+      button = createOptimizeButton(task);
+      const submit = composer.actions.querySelector('[data-action="composer-submit"]');
+      let submitWrapper = submit;
+      while (submitWrapper && submitWrapper.parentElement !== composer.actions) {
+        submitWrapper = submitWrapper.parentElement;
+      }
+      composer.actions.insertBefore(button, submitWrapper ?? composer.actions.firstChild);
+      task.button = button;
+    }
+
+    button.dataset.optimizeSession = task.sessionID;
+    if (task.status === 'ready' && task.resultText) schedulePendingApply(task);
+    updateOptimizeButton(task);
+  }
+
+  /** 创建优化/撤回图标按钮。 */
+  function createOptimizeButton(task) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'oc-pn-optimize size-7 rounded-md p-[6px]';
+    button.dataset.action = 'composer-optimize';
+    button.dataset.component = 'icon-button-v2';
+    button.dataset.size = 'normal';
+    button.dataset.variant = 'submit';
+    button.dataset.status = 'idle';
+    button.dataset.icon = 'idle';
+    button.dataset.optimizeSession = task.sessionID;
+    button.innerHTML = OPTIMIZE_ICONS.idle;
+
+    button.title = '使用当前会话模型快速优化提示词';
+    button.setAttribute('aria-label', '快速优化提示词');
+    button.addEventListener('click', onOptimizeClick);
+
+    return button;
+  }
+
+  /** 返回优化按钮当前不可用的原因。 */
+  function optimizeDisabledReason(task) {
+    const editor = task.editor;
+    if (!editor || !editor.isConnected) return '输入框尚未就绪';
+    const text = editor.innerText.trim();
+    if (!text) return '输入内容后可优化提示词';
+    if (isCommandDraft(text)) return '命令模式下不优化提示词';
+    return '暂不可用';
+  }
+
+  /** 当前草稿是否满足优化条件。 */
+  function canOptimizeDraft(task) {
+    if (task.status === 'loading') return false;
+    const editor = task.editor;
+    if (!editor || !editor.isConnected) return false;
+    const text = editor.innerText.trim();
+    if (!text) return false;
+    if (isCommandDraft(text)) return false;
+    return true;
+  }
+
+  /** 更新指定任务按钮的图标、禁用状态和提示。 */
+  function updateOptimizeButton(task) {
+    const button = task.button;
+    if (!button || !button.isConnected) return;
+
+    let status = task.status;
+    const editor = task.editor;
+    if (status === 'optimized' && (!editor || !editor.isConnected || !editor.innerText.trim())) {
+      task.status = 'idle';
+      task.original = null;
+      status = 'idle';
+    }
+
+    let disabled = false;
+    let title = '使用当前会话模型快速优化提示词';
+    let visualStatus = status;
+
+    if (status === 'loading') {
+      disabled = true;
+      title = '正在快速优化提示词';
+    } else if (status === 'ready') {
+      disabled = true;
+      title = '正在恢复优化结果';
+      visualStatus = 'loading';
+    } else if (status === 'optimized') {
+      title = '撤回优化，恢复原文';
+    } else if (Date.now() < task.errorUntil) {
+      disabled = !canOptimizeDraft(task);
+      title = task.errorText || '优化失败，请重试';
+      visualStatus = 'error';
+    } else {
+      disabled = !canOptimizeDraft(task);
+      title = disabled ? optimizeDisabledReason(task) : '使用当前会话模型快速优化提示词';
+    }
+
+    const iconKey =
+      visualStatus === 'loading'
+        ? 'loading'
+        : visualStatus === 'optimized'
+          ? 'optimized'
+          : visualStatus === 'error'
+            ? 'error'
+            : 'idle';
+
+    if (button.dataset.icon !== iconKey) {
+      button.innerHTML = OPTIMIZE_ICONS[iconKey] ?? OPTIMIZE_ICONS.idle;
+      button.dataset.icon = iconKey;
+    }
+
+    button.disabled = disabled;
+    button.dataset.status = visualStatus;
+    button.setAttribute('aria-label', title);
+    button.setAttribute(
+      'aria-busy',
+      status === 'loading' || status === 'ready' ? 'true' : 'false',
+    );
+    button.title = title;
+  }
+
+  /** 指定任务的编辑器输入时刷新按钮状态。 */
+  function onOptimizeEditorInput(task) {
+    if (task.writing) {
+      updateOptimizeButton(task);
+      return;
+    }
+
+    if (task.errorUntil) {
+      task.errorUntil = 0;
+      task.errorText = '';
+      window.clearTimeout(task.errorTimer);
+      task.errorTimer = 0;
+    }
+
+    if (task.status === 'optimized') {
+      const editor = task.editor;
+      if (!editor || !editor.innerText.trim()) {
+        task.status = 'idle';
+        task.original = null;
+      }
+    }
+
+    updateOptimizeButton(task);
+  }
+
+  /** 确保当前活动会话的 Composer 中存在优化按钮，同时保留其他 tab 的任务。 */
+  function ensureOptimizeButton() {
+    const sessionID = parseSessionID();
+    if (!sessionID) return;
+
+    const composer = findActiveComposer();
+    if (!composer) return;
+
+    bindOptimizeTask(getOptimizeTask(sessionID), composer);
+  }
+
+  /** 把编辑器拆成文本段和原始 mention 节点。 */
+  function readEditorParts(editor) {
+    const parts = [];
+    const mentions = [];
+    let text = '';
+
+    const pushText = (value) => {
+      if (!value) return;
+      text += value;
+      parts.push({ type: 'text', text: value });
+    };
+
+    const pushMention = (node) => {
+      const token = `[[OC_MENTION_${mentions.length + 1}]]`;
+      const mention = {
+        type: node.dataset.mention || 'file',
+        node,
+        token,
+        label: node.textContent || '',
+      };
+      mentions.push(mention);
+      text += token;
+      parts.push({ type: 'mention', ...mention });
+    };
+
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        pushText(node.textContent || '');
+        return;
+      }
+      if (!(node instanceof HTMLElement)) return;
+      if (node.dataset.mention) {
+        pushMention(node);
+        return;
+      }
+      if (node.tagName === 'BR') {
+        pushText('\n');
+        return;
+      }
+      Array.from(node.childNodes).forEach(walk);
+    };
+
+    Array.from(editor.childNodes).forEach((node, index, list) => {
+      walk(node);
+      if (
+        node instanceof HTMLElement &&
+        (node.tagName === 'DIV' || node.tagName === 'P') &&
+        index < list.length - 1
+      ) {
+        pushText('\n');
+      }
+    });
+
+    text = text.replace(/\u200B/g, '');
+    const signature = [
+      text,
+      ...mentions.map((mention) =>
+        [
+          mention.token,
+          mention.type,
+          mention.label,
+          mention.node.dataset.path || '',
+          mention.node.dataset.name || '',
+          mention.node.dataset.id || '',
+          mention.node.dataset.filename || '',
+          mention.node.dataset.mime || '',
+        ].join('\u0001'),
+      ),
+    ].join('\u0000');
+
+    return { text, parts, mentions, signature };
+  }
+
+  /** 判断草稿是否像斜杠命令。 */
+  function isCommandDraft(text) {
+    return /^\/[A-Za-z0-9_-]+(?:\s|$)/.test(text.trim());
+  }
+
+  /** 清理模型返回内容中的代码块、前缀和多余引号。 */
+  function cleanOptimizedText(raw) {
+    let text = String(raw || '').trim();
+    text = text.replace(/^```[A-Za-z0-9_-]*\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+    text = text
+      .replace(/^(?:优化后的?提示词|改写后的?提示词|优化结果|Prompt)\s*[:：]\s*/i, '')
+      .trim();
+    if (
+      (text.startsWith('"') && text.endsWith('"')) ||
+      (text.startsWith('“') && text.endsWith('”'))
+    ) {
+      text = text.slice(1, -1).trim();
+    }
+    text = text.replace(/`(\[\[OC_MENTION_\d+\]\])`/g, '$1');
+    return text;
+  }
+
+  /** 校验模型是否完整保留了所有 mention 占位符。 */
+  function validateMentionTokens(text, snapshot) {
+    const expected = snapshot.mentions.map((mention) => mention.token);
+    const found = text.match(/\[\[OC_MENTION_\d+\]\]/g) || [];
+    if (expected.length !== found.length) return false;
+    const seen = new Set();
+    for (const token of found) {
+      if (!expected.includes(token) || seen.has(token)) return false;
+      seen.add(token);
+    }
+    return expected.every((token) => seen.has(token));
+  }
+
+  /** 使用原始 mention 节点重建编辑器内容。 */
+  function rebuildEditor(task, editor, snapshot, nextText) {
+    const mentions = new Map(snapshot.mentions.map((mention) => [mention.token, mention.node]));
+    const nodes = [];
+    const pieces = nextText.split(/(\[\[OC_MENTION_\d+\]\])/g);
+
+    for (const piece of pieces) {
+      if (!piece) continue;
+      if (/^\[\[OC_MENTION_\d+\]\]$/.test(piece)) {
+        const node = mentions.get(piece);
+        if (!node) throw new Error('UNKNOWN_MENTION');
+        nodes.push(node);
+      } else {
+        nodes.push(document.createTextNode(piece));
+      }
+    }
+
+    editor.replaceChildren(...nodes);
+    task.writing = true;
+    try {
+      editor.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      editor.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertText',
+          data: nextText,
+        }),
+      );
+    } finally {
+      task.writing = false;
+    }
+  }
+
+  /** 请求一次性的提示词优化结果（快速模式，不读取完整会话上下文）。 */
+  async function requestOptimizedPrompt(sessionID, draft, signal) {
+    const detail = await fetchSessionDetail(sessionID, signal);
+    const model = detail?.model;
+    if (!model || !model.id || !model.providerID) throw new Error('MODEL_UNAVAILABLE');
+
+    const prompt = [OPTIMIZE_INSTRUCTION, '', '<draft>', draft, '</draft>'].join('\n');
+    const json = await postJSON(
+      '/api/experimental/generate/text',
+      {
+        prompt,
+        // 快速模式不带 reasoning variant；提示词改写不需要深度推理
+        model: { id: model.id, providerID: model.providerID },
+      },
+      signal,
+    );
+    const text = json?.data?.text;
+    if (typeof text !== 'string' || !text.trim()) throw new Error('EMPTY_RESULT');
+    return text;
+  }
+
+  /** 切回原会话后，等待草稿恢复并应用后台完成的优化结果。 */
+  function schedulePendingApply(task) {
+    if (task.pendingTimer) return;
+    const startedAt = Date.now();
+
+    const tick = () => {
+      task.pendingTimer = 0;
+      if (task.status !== 'ready') return;
+
+      const editor = task.editor;
+      if (!editor || !editor.isConnected) return;
+
+      const current = readEditorParts(editor);
+      if (!current.text.trim()) {
+        if (Date.now() - startedAt < 2500) {
+          task.pendingTimer = window.setTimeout(tick, 120);
+        } else {
+          task.status = 'idle';
+          task.original = null;
+          task.resultText = '';
+          setOptimizeError(task, '会话草稿未恢复，优化结果已丢弃');
+        }
+        return;
+      }
+
+      applyPendingOptimize(task, current);
+    };
+
+    task.pendingTimer = window.setTimeout(tick, 0);
+  }
+
+  /** 把后台完成的优化结果应用到重新出现的编辑器。 */
+  function applyPendingOptimize(task, current) {
+    const editor = task.editor;
+    const expected = task.original;
+    const nextText = task.resultText;
+    if (!editor || !editor.isConnected || !expected || !nextText) {
+      task.status = 'idle';
+      task.original = null;
+      task.resultText = '';
+      updateOptimizeButton(task);
+      return;
+    }
+
+    if (current.signature !== expected.signature) {
+      task.status = 'idle';
+      task.original = null;
+      task.resultText = '';
+      setOptimizeError(task, '草稿已变化，优化结果已丢弃');
+      return;
+    }
+
+    if (!validateMentionTokens(nextText, current)) {
+      task.status = 'idle';
+      task.original = null;
+      task.resultText = '';
+      setOptimizeError(task, '文件引用未能完整保留，已丢弃优化结果');
+      return;
+    }
+
+    try {
+      task.original = current;
+      task.resultText = '';
+      rebuildEditor(task, editor, current, nextText);
+      task.status = 'optimized';
+      updateOptimizeButton(task);
+      log('后台优化结果已应用到切回的会话', { sessionID: task.sessionID });
+    } catch (error) {
+      task.status = 'idle';
+      task.original = null;
+      task.resultText = '';
+      setOptimizeError(task, '恢复优化结果失败，请重试');
+      warn('应用后台优化结果失败', { sessionID: task.sessionID, error });
+    }
+  }
+
+  /** 展示指定任务短暂的优化失败状态。 */
+  function setOptimizeError(task, message) {
+    task.errorText = message;
+    task.errorUntil = Date.now() + 3000;
+    window.clearTimeout(task.errorTimer);
+    task.errorTimer = window.setTimeout(() => {
+      task.errorText = '';
+      task.errorUntil = 0;
+      task.errorTimer = 0;
+      updateOptimizeButton(task);
+    }, 3000);
+    updateOptimizeButton(task);
+  }
+
+  /** 执行指定会话的提示词优化；切 tab 不会中断。 */
+  async function optimizePrompt(task) {
+    if (task.status === 'loading') return;
+    const editor = task.editor;
+    if (!editor || !editor.isConnected) return;
+    if (!canOptimizeDraft(task)) {
+      updateOptimizeButton(task);
+      return;
+    }
+
+    const snapshot = readEditorParts(editor);
+    const draft = snapshot.text.trim();
+    if (!draft) return;
+    const startedAt = Date.now();
+
+    const controller = new AbortController();
+    task.abort = controller;
+    task.status = 'loading';
+    task.original = snapshot;
+    task.errorText = '';
+    task.errorUntil = 0;
+    window.clearTimeout(task.errorTimer);
+    task.errorTimer = 0;
+    updateOptimizeButton(task);
+    log('开始优化提示词', {
+      sessionID: task.sessionID,
+      mode: 'fast',
+      mentions: snapshot.mentions.length,
+    });
+
+    try {
+      const raw = await requestOptimizedPrompt(task.sessionID, draft, controller.signal);
+      if (controller.signal.aborted) return;
+
+      const nextText = cleanOptimizedText(raw);
+      if (!nextText) throw new Error('EMPTY_RESULT');
+      if (!validateMentionTokens(nextText, snapshot)) throw new Error('MENTION_MISMATCH');
+
+      const currentEditor = task.editor;
+      if (!currentEditor || !currentEditor.isConnected) {
+        // 原 tab 已经被切走，结果先保存，切回后再应用
+        task.status = 'ready';
+        task.resultText = nextText;
+        log('优化完成，等待会话重新激活', {
+          sessionID: task.sessionID,
+          mode: 'fast',
+          mentions: snapshot.mentions.length,
+          elapsedMs: Date.now() - startedAt,
+        });
+        return;
+      }
+
+      const current = readEditorParts(currentEditor);
+      if (!current.text.trim()) {
+        task.status = 'idle';
+        task.original = null;
+        updateOptimizeButton(task);
+        return;
+      }
+      if (current.signature !== snapshot.signature) {
+        task.status = 'idle';
+        task.original = null;
+        setOptimizeError(task, '输入内容已变化，已取消本次优化');
+        return;
+      }
+
+      const applySnapshot = currentEditor === editor ? snapshot : current;
+      task.original = applySnapshot;
+      rebuildEditor(task, currentEditor, applySnapshot, nextText);
+      task.status = 'optimized';
+      updateOptimizeButton(task);
+      log('提示词优化完成', {
+        sessionID: task.sessionID,
+        mode: 'fast',
+        mentions: snapshot.mentions.length,
+        elapsedMs: Date.now() - startedAt,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      task.status = 'idle';
+      task.original = null;
+      const message =
+        error instanceof Error && error.message === 'MENTION_MISMATCH'
+          ? '文件引用未能完整保留，已取消优化'
+          : error instanceof Error && error.message === 'EMPTY_RESULT'
+            ? '模型未返回有效内容，请重试'
+            : error instanceof Error && error.message === 'MODEL_UNAVAILABLE'
+              ? '无法读取当前会话模型，请重试'
+              : '优化失败，请重试';
+      setOptimizeError(task, message);
+      warn('提示词优化失败', {
+        sessionID: task.sessionID,
+        elapsedMs: Date.now() - startedAt,
+        error,
+      });
+    } finally {
+      if (task.abort === controller) task.abort = null;
+    }
+  }
+
+  /** 撤回指定任务的优化，恢复原文。 */
+  function undoOptimize(task) {
+    const editor = task.editor;
+    const original = task.original;
+    if (!editor || !editor.isConnected || !original) return;
+    try {
+      rebuildEditor(task, editor, original, original.text);
+      task.status = 'idle';
+      task.original = null;
+      updateOptimizeButton(task);
+      log('已撤回提示词优化', { sessionID: task.sessionID });
+    } catch (error) {
+      warn('撤回提示词优化失败', { sessionID: task.sessionID, error });
+    }
+  }
+
+  /** 根据按钮所属的 session 执行优化/撤回，不依赖当前活动路由。 */
+  function onOptimizeClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const button = event.currentTarget;
+    const sessionID = button?.dataset.optimizeSession;
+    const task = sessionID ? optimizeTasks.get(sessionID) : null;
+    if (!task) return;
+    if (task.status === 'loading') return;
+    if (task.status === 'ready') {
+      schedulePendingApply(task);
+      return;
+    }
+    if (task.status === 'optimized') {
+      undoOptimize(task);
+      return;
+    }
+    void optimizePrompt(task);
+  }
+
+  /** 页面关闭/刷新时中止所有优化任务。 */
+  function abortAllOptimizeTasks() {
+    for (const task of optimizeTasks.values()) {
+      task.abort?.abort();
+      window.clearTimeout(task.errorTimer);
+      window.clearTimeout(task.pendingTimer);
+      if (task.editor && task.inputHandler) {
+        task.editor.removeEventListener('input', task.inputHandler);
+      }
+      task.button?.remove();
+    }
+    optimizeTasks.clear();
+  }
+
   /** 停止当前会话相关的请求、定时器和监听。 */
   function stopSessionWork() {
     if (state.loadAbort) {
@@ -854,6 +1591,7 @@
     state.itemIDs = new Set();
     state.activeID = null;
     resetRail();
+    ensureOptimizeButton();
 
     const controller = new AbortController();
     state.loadAbort = controller;
@@ -893,6 +1631,7 @@
       renderRail();
       ensureScroller();
       applyHashActive();
+      ensureOptimizeButton();
       setupPolling();
       scheduleActiveUpdate();
     } catch (error) {
@@ -980,7 +1719,10 @@
     const sessionID = parseSessionID();
 
     if (sessionID === state.sessionID) {
-      if (sessionID) ensureScroller();
+      if (sessionID) {
+        ensureScroller();
+        ensureOptimizeButton();
+      }
       return;
     }
 
@@ -1039,6 +1781,7 @@
     window.addEventListener('popstate', onRouteEvent, true);
     window.addEventListener('hashchange', onHashEvent, true);
     window.addEventListener('resize', onResize, { passive: true });
+    window.addEventListener('pagehide', abortAllOptimizeTasks, { once: true });
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     log('扩展已启动，等待 opencode pair 会话页面');
