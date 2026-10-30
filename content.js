@@ -16,6 +16,10 @@
   const HTTP_TIMEOUT = 15000;
   const JUMP_LOAD_TIMEOUT = 10000;
   const JUMP_SEARCH_TIMEOUT = 6000;
+  const BOOKMARKS_KEY = 'ocBookmarksV1';
+  const BOOKMARK_PREVIEW_LIMIT = 240;
+  const BOOKMARK_NOTE_LIMIT = 2000;
+  const BOOKMARK_MAX = 1000;
   const LOG_PREFIX = '[OC Prompt Nav]';
 
   const CSS = `
@@ -154,9 +158,25 @@
         0 0 0 3px var(--v2-border-border-focus, #3b82f6);
     }
 
+    .item[data-bookmarked='true']::after {
+      content: '★';
+      position: absolute;
+      top: 50%;
+      left: 4px;
+      color: var(--v2-text-text-muted, #666);
+      font-size: 9px;
+      line-height: 1;
+      opacity: 0.8;
+      transform: translateY(-50%);
+    }
+
+    .item[data-active='true'][data-bookmarked='true']::after {
+      color: var(--v2-text-text-base, #111);
+    }
+
     .preview {
       position: fixed;
-      right: 52px;
+      right: 78px;
       width: min(420px, calc(100vw - 120px));
       padding: 14px 16px;
       border: 1px solid
@@ -187,6 +207,7 @@
       opacity: 1;
       visibility: visible;
       transform: translateY(0) scale(1);
+      pointer-events: auto;
       transition:
         top 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
         opacity 140ms ease,
@@ -204,6 +225,49 @@
       line-height: 1.6;
       overflow-wrap: anywhere;
       white-space: normal;
+    }
+
+    .preview-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 10px;
+      padding-top: 9px;
+      border-top: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 40%,
+          transparent
+        );
+    }
+
+    .preview-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 7px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--v2-text-text-muted, #666);
+      font: inherit;
+      font-size: 11px;
+      line-height: 1.2;
+      cursor: pointer;
+      transition:
+        background-color 120ms ease,
+        color 120ms ease;
+    }
+
+    .preview-action:hover,
+    .preview-action:focus-visible {
+      background: var(--v2-overlay-simple-overlay-hover, rgba(0, 0, 0, 0.06));
+      color: var(--v2-text-text-base, #111);
+      outline: none;
+    }
+
+    .preview-action[data-active='true'] {
+      color: var(--v2-text-text-base, #111);
     }
 
     .toast {
@@ -225,7 +289,7 @@
       font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
       text-align: center;
       pointer-events: none;
-      z-index: 5;
+      z-index: 9;
       opacity: 0;
       visibility: hidden;
       transform: translate(-50%, 6px);
@@ -243,6 +307,463 @@
         opacity 140ms ease,
         transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
         visibility 0s;
+    }
+
+    .bookmarks-trigger {
+      position: fixed;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 55%,
+          transparent
+        );
+      border-radius: 9px;
+      background: color-mix(
+        in srgb,
+        var(--v2-background-bg-base, #fff) 68%,
+        transparent
+      );
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+      color: var(--v2-text-text-muted, #666);
+      cursor: pointer;
+      opacity: 0.72;
+      pointer-events: auto;
+      backdrop-filter: blur(10px);
+      transition:
+        opacity 140ms ease,
+        color 140ms ease,
+        background-color 140ms ease,
+        border-color 140ms ease;
+    }
+
+    .bookmarks-trigger:hover,
+    .bookmarks-trigger:focus-visible {
+      border-color: color-mix(
+        in srgb,
+        var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 85%,
+        transparent
+      );
+      background: var(--v2-background-bg-base, #fff);
+      color: var(--v2-text-text-base, #111);
+      opacity: 1;
+      outline: none;
+    }
+
+    .bookmarks-trigger[data-inside='true'] {
+      background: var(--v2-background-bg-base, #fff);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    }
+
+    .bookmarks-trigger[hidden] {
+      display: none;
+    }
+
+    .bookmarks-drawer {
+      position: fixed;
+      top: 50%;
+      right: 78px;
+      z-index: 4;
+      display: flex;
+      flex-direction: column;
+      width: min(420px, calc(100vw - 100px));
+      max-height: 70vh;
+      overflow: hidden;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-strong, rgba(128, 128, 128, 0.25)) 16%,
+          transparent
+        );
+      border-radius: 16px;
+      background: var(--v2-background-bg-layer-01, #fff);
+      box-shadow: var(--v2-elevation-floating, 0 10px 30px rgba(0, 0, 0, 0.14));
+      color: var(--v2-text-text-base, #111);
+      font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(calc(-50% + 6px));
+      transition:
+        opacity 140ms ease,
+        transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        visibility 0s linear 160ms;
+    }
+
+    .bookmarks-drawer[data-open='true'] {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translateY(-50%);
+      transition:
+        opacity 140ms ease,
+        transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        visibility 0s;
+    }
+
+    .bookmarks-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 12px 14px;
+      border-bottom: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 40%,
+          transparent
+        );
+    }
+
+    .bookmarks-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .bookmarks-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--v2-text-text-muted, #666);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .bookmarks-close:hover,
+    .bookmarks-close:focus-visible {
+      background: var(--v2-overlay-simple-overlay-hover, rgba(0, 0, 0, 0.06));
+      color: var(--v2-text-text-base, #111);
+      outline: none;
+    }
+
+    .bookmarks-search {
+      margin: 10px 12px 8px;
+      padding: 6px 9px;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 60%,
+          transparent
+        );
+      border-radius: 7px;
+      background: transparent;
+      color: var(--v2-text-text-base, #111);
+      font: inherit;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .bookmarks-search::placeholder {
+      color: var(--v2-text-text-muted, #666);
+    }
+
+    .bookmarks-search:focus {
+      border-color: var(--v2-border-border-focus, #3b82f6);
+    }
+
+    .bookmarks-list {
+      flex: 1;
+      min-height: 0;
+      padding: 0 8px 8px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    .bookmarks-empty {
+      padding: 26px 18px;
+      color: var(--v2-text-text-muted, #666);
+      font-size: 12px;
+      line-height: 1.6;
+      text-align: center;
+    }
+
+    .bookmarks-selectbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px 8px;
+      color: var(--v2-text-text-muted, #666);
+      font-size: 11px;
+    }
+
+    .bookmarks-select-all {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    .bookmarks-select-all input,
+    .bookmark-check {
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      accent-color: var(--v2-text-text-base, #111);
+      cursor: pointer;
+    }
+
+    .bookmarks-selected-count {
+      color: var(--v2-text-text-muted, #666);
+      font-size: 11px;
+    }
+
+    .bookmark-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      padding: 9px 8px;
+      border-bottom: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 28%,
+          transparent
+        );
+    }
+
+    .bookmark-check {
+      flex: 0 0 auto;
+      margin-top: 2px;
+    }
+
+    .bookmark-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .bookmark-item:last-child {
+      border-bottom: 0;
+    }
+
+    .bookmark-jump {
+      display: -webkit-box;
+      overflow: hidden;
+      width: 100%;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--v2-text-text-base, #111);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: left;
+      cursor: pointer;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .bookmark-jump:hover,
+    .bookmark-jump:focus-visible {
+      color: var(--v2-text-text-base, #111);
+      text-decoration: underline;
+      outline: none;
+    }
+
+    .bookmark-note {
+      margin-top: 5px;
+      padding: 5px 7px;
+      border-left: 2px solid
+        color-mix(
+          in srgb,
+          var(--v2-text-text-muted, #666) 45%,
+          transparent
+        );
+      color: var(--v2-text-text-muted, #666);
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .bookmark-meta {
+      margin-top: 4px;
+      color: var(--v2-text-text-muted, #666);
+      font-size: 10px;
+    }
+
+    .bookmark-actions {
+      display: flex;
+      gap: 4px;
+      margin-top: 5px;
+    }
+
+    .bookmark-action {
+      padding: 2px 6px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--v2-text-text-muted, #666);
+      font: inherit;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    .bookmark-action:hover,
+    .bookmark-action:focus-visible {
+      background: var(--v2-overlay-simple-overlay-hover, rgba(0, 0, 0, 0.06));
+      color: var(--v2-text-text-base, #111);
+      outline: none;
+    }
+
+    .bookmarks-foot {
+      display: flex;
+      gap: 5px;
+      padding: 10px 12px;
+      border-top: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 40%,
+          transparent
+        );
+    }
+
+    .bookmark-export {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 4px;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 55%,
+          transparent
+        );
+      border-radius: 7px;
+      background: transparent;
+      color: var(--v2-text-text-base, #111);
+      font: inherit;
+      font-size: 11px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .bookmark-export:hover,
+    .bookmark-export:focus-visible {
+      background: var(--v2-overlay-simple-overlay-hover, rgba(0, 0, 0, 0.06));
+      outline: none;
+    }
+
+    .bookmark-export:disabled {
+      cursor: progress;
+      opacity: 0.55;
+    }
+
+    .note-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.18);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition:
+        opacity 140ms ease,
+        visibility 0s linear 140ms;
+    }
+
+    .note-backdrop[data-open='true'] {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transition:
+        opacity 140ms ease,
+        visibility 0s;
+    }
+
+    .note-card {
+      width: min(460px, calc(100vw - 40px));
+      padding: 16px;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-strong, rgba(128, 128, 128, 0.25)) 16%,
+          transparent
+        );
+      border-radius: 14px;
+      background: var(--v2-background-bg-layer-01, #fff);
+      box-shadow: var(--v2-elevation-floating, 0 10px 30px rgba(0, 0, 0, 0.18));
+      color: var(--v2-text-text-base, #111);
+      font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    }
+
+    .note-title {
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .note-textarea {
+      width: 100%;
+      min-height: 100px;
+      max-height: 240px;
+      padding: 8px 9px;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 65%,
+          transparent
+        );
+      border-radius: 8px;
+      background: transparent;
+      color: var(--v2-text-text-base, #111);
+      font: inherit;
+      line-height: 1.5;
+      outline: none;
+      resize: vertical;
+    }
+
+    .note-textarea:focus {
+      border-color: var(--v2-border-border-focus, #3b82f6);
+    }
+
+    .note-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .note-button {
+      padding: 5px 10px;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 55%,
+          transparent
+        );
+      border-radius: 7px;
+      background: transparent;
+      color: var(--v2-text-text-base, #111);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .note-button:hover,
+    .note-button:focus-visible {
+      background: var(--v2-overlay-simple-overlay-hover, rgba(0, 0, 0, 0.06));
+      outline: none;
+    }
+
+    .note-button[data-primary='true'] {
+      border-color: var(--v2-text-text-base, #111);
+      background: var(--v2-text-text-base, #111);
+      color: var(--v2-background-bg-base, #fff);
     }
 
     .jump-overlay {
@@ -456,7 +977,14 @@
       .preview,
       .toast,
       .glm-launcher,
-      .ai-menu {
+      .ai-menu,
+      .bookmarks-trigger,
+      .bookmarks-drawer,
+      .note-backdrop,
+      .preview-action,
+      .bookmark-action,
+      .bookmark-export,
+      .note-button {
         animation: none;
         transition: none;
       }
@@ -517,6 +1045,10 @@
 
   const AI_CHAT_ICON = `<svg data-slot="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 5.5A2.5 2.5 0 0 1 7 3h10a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 17 15h-7l-4.5 3.5V15H7a2.5 2.5 0 0 1-2.5-2.5v-7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
 
+  const BOOKMARK_ICON = `<svg data-slot="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-4-6 4V4.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+
+  const STAR_ICON = `<svg data-slot="icon-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+
   const OPTIMIZE_INSTRUCTION = [
     'You are a prompt editor for the next user message.',
     'Rewrite the text inside <draft> so it is clear, specific, and logically structured.',
@@ -569,6 +1101,28 @@
     aiMenuHideTimer: 0,
     aiStorageBound: false,
     suppressAiMenuFocus: false,
+    sessionTitle: '',
+    bookmarks: new Map(),
+    bookmarkStorageBound: false,
+    bookmarkTrigger: null,
+    bookmarksDrawer: null,
+    bookmarksSearch: null,
+    bookmarksList: null,
+    bookmarksEmpty: null,
+    bookmarksOpen: false,
+    noteBackdrop: null,
+    noteTextarea: null,
+    noteTitle: null,
+    noteTargetID: null,
+    exporting: false,
+    previewID: null,
+    previewBookmarkButton: null,
+    bookmarksExportBookmarks: null,
+    bookmarksExportSession: null,
+    bookmarkSelection: new Set(),
+    bookmarksSelectAll: null,
+    bookmarksSelectedCount: null,
+    bookmarksExportSelected: null,
   };
 
   function log(...args) {
@@ -699,6 +1253,32 @@
     return Array.isArray(json?.data) ? json.data : [];
   }
 
+  /** 分页读取会话中的全部消息，用于 Markdown 导出。 */
+  async function fetchAllMessages(sessionID, signal) {
+    const base = `/api/session/${encodeURIComponent(sessionID)}/message`;
+    let url = `${base}?limit=${PAGE_SIZE}&order=asc`;
+    const collected = [];
+
+    for (let page = 0; page < 25; page += 1) {
+      const json = await api(url, signal);
+      const data = Array.isArray(json?.data) ? json.data : [];
+      collected.push(...data);
+
+      const next = json?.cursor?.next;
+      if (!next || data.length === 0) break;
+      url = `${base}?limit=${PAGE_SIZE}&cursor=${encodeURIComponent(next)}`;
+    }
+
+    const result = [];
+    const seen = new Set();
+    for (const raw of collected) {
+      if (!raw || typeof raw.id !== 'string' || seen.has(raw.id)) continue;
+      seen.add(raw.id);
+      result.push(raw);
+    }
+    return result;
+  }
+
   /** 把接口消息转换为导航栏需要的精简结构。 */
   function normalizeMessage(raw) {
     if (!raw || typeof raw.id !== 'string') return null;
@@ -729,10 +1309,446 @@
     };
   }
 
+  /** 返回书签在当前 server/session 下的稳定 key。 */
+  function bookmarkKey(messageID) {
+    return `${location.origin}|${state.sessionID}|${messageID}`;
+  }
+
+  /** 返回当前会话的书签记录。 */
+  function getBookmark(messageID) {
+    if (!state.sessionID || !messageID) return null;
+    return state.bookmarks.get(bookmarkKey(messageID)) || null;
+  }
+
+  /** 返回当前会话的全部书签，按消息顺序排列。 */
+  function getSessionBookmarks() {
+    const order = new Map(state.items.map((item, index) => [item.id, index]));
+    return [...state.bookmarks.values()]
+      .filter(
+        (record) =>
+          record &&
+          record.server === location.origin &&
+          record.sessionID === state.sessionID &&
+          typeof record.messageID === 'string',
+      )
+      .sort((left, right) => {
+        const leftIndex = order.has(left.messageID) ? order.get(left.messageID) : 999999;
+        const rightIndex = order.has(right.messageID) ? order.get(right.messageID) : 999999;
+        return leftIndex - rightIndex || left.createdAt - right.createdAt;
+      });
+  }
+
+  /** 解析本地存储中的书签对象。 */
+  function parseBookmarks(raw) {
+    const map = new Map();
+    if (!raw || typeof raw !== 'object') return map;
+
+    for (const [key, record] of Object.entries(raw)) {
+      if (!record || typeof record !== 'object') continue;
+      if (typeof record.server !== 'string' || typeof record.sessionID !== 'string') continue;
+      if (typeof record.messageID !== 'string') continue;
+      map.set(key, {
+        server: record.server,
+        sessionID: record.sessionID,
+        sessionTitle: typeof record.sessionTitle === 'string' ? record.sessionTitle : '',
+        messageID: record.messageID,
+        promptPreview:
+          typeof record.promptPreview === 'string'
+            ? record.promptPreview.slice(0, BOOKMARK_PREVIEW_LIMIT)
+            : '',
+        note:
+          typeof record.note === 'string' ? record.note.slice(0, BOOKMARK_NOTE_LIMIT) : '',
+        createdAt: typeof record.createdAt === 'number' ? record.createdAt : Date.now(),
+        updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : Date.now(),
+      });
+    }
+    return map;
+  }
+
+  /** 从 chrome.storage.local 读取全部书签。 */
+  async function loadBookmarks() {
+    try {
+      const data = await chrome.storage.local.get(BOOKMARKS_KEY);
+      state.bookmarks = parseBookmarks(data?.[BOOKMARKS_KEY]);
+      syncBookmarkUi();
+    } catch (error) {
+      warn('读取会话书签失败', error);
+    }
+  }
+
+  /** 监听其他窗口对书签的修改。 */
+  function bindBookmarkStorage() {
+    if (state.bookmarkStorageBound) return;
+    state.bookmarkStorageBound = true;
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes[BOOKMARKS_KEY]) return;
+      state.bookmarks = parseBookmarks(changes[BOOKMARKS_KEY].newValue);
+      syncBookmarkUi();
+    });
+  }
+
+  /** Alt+B 打开书签；Escape 关闭备注或书签抽屉。 */
+  function onGlobalKeyDown(event) {
+    if (
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      event.key.toLowerCase() === 'b'
+    ) {
+      if (state.noteBackdrop?.dataset.open === 'true') return;
+      event.preventDefault();
+      toggleBookmarksDrawer();
+      return;
+    }
+
+    if (event.key !== 'Escape') return;
+    if (state.noteBackdrop?.dataset.open === 'true') {
+      event.preventDefault();
+      hideNoteDialog();
+      return;
+    }
+    if (state.bookmarksOpen) {
+      event.preventDefault();
+      hideBookmarksDrawer();
+    }
+  }
+
+  /** 点击书签抽屉和备注弹层以外的区域时关闭抽屉。 */
+  function onDocumentPointerDown(event) {
+    if (!state.bookmarksOpen) return;
+    const path = event.composedPath();
+    if (
+      path.includes(state.bookmarksDrawer) ||
+      path.includes(state.bookmarkTrigger) ||
+      path.includes(state.noteBackdrop)
+    ) {
+      return;
+    }
+    hideBookmarksDrawer();
+  }
+
+  /** 持久化书签；超过上限时保留最近更新的记录。 */
+  async function persistBookmarks() {
+    try {
+      const records = [...state.bookmarks.values()]
+        .sort((left, right) => right.updatedAt - left.updatedAt)
+        .slice(0, BOOKMARK_MAX);
+      state.bookmarks = new Map(
+        records.map((record) => [
+          `${record.server}|${record.sessionID}|${record.messageID}`,
+          record,
+        ]),
+      );
+      const payload = Object.fromEntries(state.bookmarks);
+      await chrome.storage.local.set({ [BOOKMARKS_KEY]: payload });
+    } catch (error) {
+      warn('保存会话书签失败', error);
+      showToast('书签保存失败，请重试');
+    }
+  }
+
+  /** 创建一条新的书签记录。 */
+  function createBookmarkRecord(messageID, note = '') {
+    const item = state.items.find((entry) => entry.id === messageID);
+    const prompt = item?.display || item?.preview || '(空消息)';
+    const now = Date.now();
+    return {
+      server: location.origin,
+      sessionID: state.sessionID,
+      sessionTitle: state.sessionTitle || '',
+      messageID,
+      promptPreview: prompt.slice(0, BOOKMARK_PREVIEW_LIMIT),
+      note: note.slice(0, BOOKMARK_NOTE_LIMIT),
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  /** 保存备注；备注为空且尚未收藏时不创建记录。 */
+  function setBookmarkNote(messageID, note) {
+    if (!state.sessionID || !messageID) return false;
+    const key = bookmarkKey(messageID);
+    const existing = state.bookmarks.get(key);
+    const value = note.trim().slice(0, BOOKMARK_NOTE_LIMIT);
+    if (!value && !existing) return false;
+
+    if (existing) {
+      existing.note = value;
+      existing.updatedAt = Date.now();
+      existing.sessionTitle = state.sessionTitle || existing.sessionTitle;
+    } else {
+      state.bookmarks.set(key, createBookmarkRecord(messageID, value));
+    }
+
+    void persistBookmarks();
+    syncBookmarkUi();
+    return true;
+  }
+
+  /** 删除指定书签（包含备注）。 */
+  function removeBookmark(messageID) {
+    if (!state.sessionID || !messageID) return;
+    const key = bookmarkKey(messageID);
+    const existing = state.bookmarks.get(key);
+    if (!existing) return;
+    state.bookmarks.delete(key);
+    state.bookmarkSelection.delete(messageID);
+    void persistBookmarks();
+    syncBookmarkUi();
+    showToast(existing.note ? '已取消收藏，备注一并删除' : '已取消收藏');
+  }
+
+  /** 收藏 / 取消收藏一条提问。 */
+  function toggleBookmark(messageID) {
+    if (!state.sessionID || !messageID) return;
+    const key = bookmarkKey(messageID);
+    const existing = state.bookmarks.get(key);
+
+    if (existing) {
+      removeBookmark(messageID);
+      return;
+    }
+
+    state.bookmarks.set(key, createBookmarkRecord(messageID));
+    void persistBookmarks();
+    syncBookmarkUi();
+    showToast('已收藏');
+  }
+
+  /** 更新预览卡上的收藏按钮状态。 */
+  function updatePreviewBookmarkButton() {
+    const button = state.previewBookmarkButton;
+    if (!button) return;
+    const bookmarked = !!getBookmark(state.previewID);
+    button.dataset.active = bookmarked ? 'true' : 'false';
+    button.title = bookmarked ? '取消收藏' : '收藏这条提问';
+    const label = button.querySelector('span');
+    if (label) label.textContent = bookmarked ? '已收藏' : '收藏';
+  }
+
+  /** 同步 rail 标记、预览按钮和书签抽屉。 */
+  function syncBookmarkUi() {
+    for (const [id, button] of state.buttons) {
+      if (getBookmark(id)) {
+        button.dataset.bookmarked = 'true';
+      } else {
+        delete button.dataset.bookmarked;
+      }
+    }
+
+    updatePreviewBookmarkButton();
+    if (state.bookmarksOpen) renderBookmarksList();
+    syncBookmarkSelectionUi();
+  }
+
+  /** 兼容旧调用：书签入口和 AI 入口一起定位。 */
+  function positionBookmarksTrigger() {
+    positionGlmLauncher();
+  }
+
   /** 按消息 ID 升序排列，与 OpenCode 时间线的顺序保持一致。 */
   function compareItems(left, right) {
     if (left.id === right.id) return 0;
     return left.id < right.id ? -1 : 1;
+  }
+
+  /** 创建预览卡上的收藏 / 备注 / 跳转操作。 */
+  function createPreviewActions() {
+    const wrap = document.createElement('div');
+    wrap.className = 'preview-actions';
+
+    const bookmark = document.createElement('button');
+    bookmark.type = 'button';
+    bookmark.className = 'preview-action';
+    bookmark.dataset.previewAction = 'bookmark';
+    bookmark.innerHTML = `${STAR_ICON}<span>收藏</span>`;
+    bookmark.title = '收藏这条提问';
+    bookmark.addEventListener('click', () => {
+      if (state.previewID) toggleBookmark(state.previewID);
+    });
+
+    const note = document.createElement('button');
+    note.type = 'button';
+    note.className = 'preview-action';
+    note.dataset.previewAction = 'note';
+    note.textContent = '备注';
+    note.title = '给这条提问添加备注';
+    note.addEventListener('click', () => {
+      if (state.previewID) openNoteDialog(state.previewID);
+    });
+
+    const jump = document.createElement('button');
+    jump.type = 'button';
+    jump.className = 'preview-action';
+    jump.dataset.previewAction = 'jump';
+    jump.textContent = '跳转';
+    jump.title = '跳转到这条提问';
+    jump.addEventListener('click', () => {
+      if (state.previewID) jumpTo(state.previewID);
+    });
+
+    wrap.append(bookmark, note, jump);
+    state.previewBookmarkButton = bookmark;
+    return wrap;
+  }
+
+  /** 创建书签入口、书签抽屉和备注弹层。 */
+  function createBookmarkUi() {
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'bookmarks-trigger';
+    trigger.hidden = true;
+    trigger.title = '会话书签（Alt+B）';
+    trigger.setAttribute('aria-label', '打开会话书签');
+    trigger.innerHTML = BOOKMARK_ICON;
+
+    const drawer = document.createElement('aside');
+    drawer.className = 'bookmarks-drawer';
+    drawer.dataset.open = 'false';
+    drawer.setAttribute('aria-label', '会话书签');
+    drawer.setAttribute('role', 'complementary');
+
+    const head = document.createElement('div');
+    head.className = 'bookmarks-head';
+    const title = document.createElement('div');
+    title.className = 'bookmarks-title';
+    title.textContent = '会话书签';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'bookmarks-close';
+    close.textContent = '×';
+    close.title = '关闭书签';
+    close.setAttribute('aria-label', '关闭会话书签');
+    head.append(title, close);
+
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'bookmarks-search';
+    search.placeholder = '搜索书签…';
+    search.setAttribute('aria-label', '搜索会话书签');
+    search.addEventListener('input', renderBookmarksList);
+
+    const list = document.createElement('div');
+    list.className = 'bookmarks-list';
+
+    const selectBar = document.createElement('div');
+    selectBar.className = 'bookmarks-selectbar';
+    const selectAllLabel = document.createElement('label');
+    selectAllLabel.className = 'bookmarks-select-all';
+    const selectAll = document.createElement('input');
+    selectAll.type = 'checkbox';
+    selectAll.disabled = true;
+    selectAll.addEventListener('change', onToggleSelectAll);
+    const selectAllText = document.createElement('span');
+    selectAllText.textContent = '全选';
+    selectAllLabel.append(selectAll, selectAllText);
+    const selectedCount = document.createElement('span');
+    selectedCount.className = 'bookmarks-selected-count';
+    selectedCount.textContent = '已选 0 条';
+    selectBar.append(selectAllLabel, selectedCount);
+
+    const foot = document.createElement('div');
+    foot.className = 'bookmarks-foot';
+
+    const exportSelected = document.createElement('button');
+    exportSelected.type = 'button';
+    exportSelected.className = 'bookmark-export';
+    exportSelected.textContent = '导出选中';
+    exportSelected.title = '导出勾选的书签';
+    exportSelected.disabled = true;
+    exportSelected.addEventListener('click', () => {
+      if (state.bookmarkSelection.size > 0) {
+        void exportBookmarksMarkdown(new Set(state.bookmarkSelection));
+      }
+    });
+
+    const exportBookmarks = document.createElement('button');
+    exportBookmarks.type = 'button';
+    exportBookmarks.className = 'bookmark-export';
+    exportBookmarks.textContent = '全部书签';
+    exportBookmarks.title = '把当前会话的全部书签导出为 Markdown';
+    exportBookmarks.addEventListener('click', () => {
+      void exportBookmarksMarkdown();
+    });
+    const exportSession = document.createElement('button');
+    exportSession.type = 'button';
+    exportSession.className = 'bookmark-export';
+    exportSession.textContent = '导出会话';
+    exportSession.title = '把当前会话导出为 Markdown';
+    exportSession.addEventListener('click', () => {
+      void exportSessionMarkdown();
+    });
+    foot.append(exportSelected, exportBookmarks, exportSession);
+
+    drawer.append(head, search, selectBar, list, foot);
+
+    const noteBackdrop = document.createElement('div');
+    noteBackdrop.className = 'note-backdrop';
+    noteBackdrop.dataset.open = 'false';
+    const noteCard = document.createElement('div');
+    noteCard.className = 'note-card';
+    noteCard.setAttribute('role', 'dialog');
+    noteCard.setAttribute('aria-modal', 'true');
+    noteCard.setAttribute('aria-label', '提问备注');
+    const noteTitle = document.createElement('div');
+    noteTitle.className = 'note-title';
+    noteTitle.textContent = '添加备注';
+    const noteTextarea = document.createElement('textarea');
+    noteTextarea.className = 'note-textarea';
+    noteTextarea.maxLength = BOOKMARK_NOTE_LIMIT;
+    noteTextarea.placeholder = '记录这条提问为什么重要、结论是什么…';
+    const noteActions = document.createElement('div');
+    noteActions.className = 'note-actions';
+    const noteCancel = document.createElement('button');
+    noteCancel.type = 'button';
+    noteCancel.className = 'note-button';
+    noteCancel.textContent = '取消';
+    const noteSave = document.createElement('button');
+    noteSave.type = 'button';
+    noteSave.className = 'note-button';
+    noteSave.dataset.primary = 'true';
+    noteSave.textContent = '保存';
+    noteActions.append(noteCancel, noteSave);
+    noteCard.append(noteTitle, noteTextarea, noteActions);
+    noteBackdrop.append(noteCard);
+
+    trigger.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleBookmarksDrawer();
+    });
+    close.addEventListener('click', hideBookmarksDrawer);
+    noteCancel.addEventListener('click', hideNoteDialog);
+    noteSave.addEventListener('click', saveNoteDialog);
+    noteBackdrop.addEventListener('pointerdown', (event) => {
+      if (event.target === noteBackdrop) hideNoteDialog();
+    });
+    noteTextarea.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        hideNoteDialog();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        saveNoteDialog();
+      }
+    });
+
+    state.bookmarkTrigger = trigger;
+    state.bookmarksDrawer = drawer;
+    state.bookmarksSearch = search;
+    state.bookmarksList = list;
+    state.bookmarksExportBookmarks = exportBookmarks;
+    state.bookmarksExportSession = exportSession;
+    state.bookmarksExportSelected = exportSelected;
+    state.bookmarksSelectAll = selectAll;
+    state.bookmarksSelectedCount = selectedCount;
+    state.noteBackdrop = noteBackdrop;
+    state.noteTextarea = noteTextarea;
+    state.noteTitle = noteTitle;
+
+    return { trigger, drawer, noteBackdrop };
   }
 
   /** 创建 Shadow DOM 导航界面。 */
@@ -770,7 +1786,18 @@
     preview.dataset.open = 'false';
     const previewText = document.createElement('div');
     previewText.className = 'text';
-    preview.append(previewText);
+    preview.append(previewText, createPreviewActions());
+    preview.addEventListener('pointerenter', () => {
+      window.clearTimeout(state.previewTimer);
+    });
+    preview.addEventListener('pointerleave', hidePreviewSoon);
+    preview.addEventListener('focusin', () => {
+      window.clearTimeout(state.previewTimer);
+    });
+    preview.addEventListener('focusout', (event) => {
+      if (event.relatedTarget && preview.contains(event.relatedTarget)) return;
+      hidePreviewSoon();
+    });
 
     const toast = document.createElement('div');
     toast.className = 'toast';
@@ -819,7 +1846,19 @@
     aiMenu.addEventListener('focusin', cancelAiMenuHide);
     aiMenu.addEventListener('focusout', onAiMenuFocusOut);
 
-    shadow.append(rail, preview, overlay, glmLauncher, aiMenu, toast);
+    const bookmarkUi = createBookmarkUi();
+
+    shadow.append(
+      rail,
+      preview,
+      overlay,
+      glmLauncher,
+      aiMenu,
+      bookmarkUi.trigger,
+      bookmarkUi.drawer,
+      bookmarkUi.noteBackdrop,
+      toast,
+    );
     document.body.appendChild(host);
 
     state.host = host;
@@ -834,6 +1873,7 @@
 
     renderAiMenu();
     updateAiTrigger();
+    positionBookmarksTrigger();
 
     log('导航界面已创建');
   }
@@ -845,6 +1885,8 @@
     state.rail.hidden = true;
     state.buttons.clear();
     hidePreview();
+    hideBookmarksDrawer();
+    hideNoteDialog();
   }
 
   /** 根据当前消息列表重新渲染 dash rail。 */
@@ -859,6 +1901,7 @@
 
     if (state.items.length === 0) {
       state.rail.hidden = true;
+      positionBookmarksTrigger();
       return;
     }
 
@@ -884,6 +1927,7 @@
 
     state.rail.appendChild(fragment);
     state.rail.hidden = false;
+    syncBookmarkUi();
 
     if (!state.activeID || !state.buttons.has(state.activeID)) {
       state.activeID = state.items[state.items.length - 1]?.id ?? null;
@@ -892,6 +1936,7 @@
 
     window.requestAnimationFrame(() => {
       scrollActiveIntoView();
+      positionBookmarksTrigger();
       scheduleActiveUpdate();
     });
 
@@ -952,7 +1997,9 @@
     if (index < 0) return;
 
     const item = state.items[index];
+    state.previewID = id;
     state.previewText.textContent = item.preview;
+    updatePreviewBookmarkButton();
 
     const buttonRect = button.getBoundingClientRect();
     const previewHeight = state.preview.offsetHeight;
@@ -977,6 +2024,486 @@
   function hidePreview() {
     window.clearTimeout(state.previewTimer);
     if (state.preview) state.preview.dataset.open = 'false';
+    state.previewID = null;
+  }
+
+  /** 格式化书签更新时间。 */
+  function formatBookmarkTime(timestamp) {
+    try {
+      return new Date(timestamp).toLocaleString('zh-CN', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  }
+
+  /** 打开 / 关闭会话书签抽屉。 */
+  function toggleBookmarksDrawer() {
+    if (state.bookmarksOpen) {
+      hideBookmarksDrawer();
+    } else {
+      openBookmarksDrawer();
+    }
+  }
+
+  /** 打开会话书签抽屉。 */
+  function openBookmarksDrawer() {
+    if (!state.bookmarksDrawer) return;
+    hidePreview();
+    state.bookmarksOpen = true;
+    state.bookmarksDrawer.dataset.open = 'true';
+    renderBookmarksList();
+    window.setTimeout(() => {
+      state.bookmarksSearch?.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  /** 关闭会话书签抽屉。 */
+  function hideBookmarksDrawer() {
+    state.bookmarksOpen = false;
+    if (state.bookmarksDrawer) state.bookmarksDrawer.dataset.open = 'false';
+  }
+
+  /** 返回当前搜索条件下的书签列表。 */
+  function getFilteredSessionBookmarks() {
+    const query = (state.bookmarksSearch?.value || '').trim().toLowerCase();
+    return getSessionBookmarks().filter((record) => {
+      if (!query) return true;
+      const item = state.items.find((entry) => entry.id === record.messageID);
+      const text = `${item?.display || record.promptPreview || ''}\n${record.note || ''}`;
+      return text.toLowerCase().includes(query);
+    });
+  }
+
+  /** 同步勾选数量、全选框和“导出选中”按钮。 */
+  function syncBookmarkSelectionUi() {
+    const current = new Set(getSessionBookmarks().map((record) => record.messageID));
+    for (const id of [...state.bookmarkSelection]) {
+      if (!current.has(id)) state.bookmarkSelection.delete(id);
+    }
+
+    const selected = state.bookmarkSelection.size;
+    if (state.bookmarksSelectedCount) {
+      state.bookmarksSelectedCount.textContent = `已选 ${selected} 条`;
+    }
+    if (state.bookmarksExportSelected) {
+      state.bookmarksExportSelected.disabled = state.exporting || selected === 0;
+    }
+
+    const visible = getFilteredSessionBookmarks().map((record) => record.messageID);
+    const selectedVisible = visible.filter((id) => state.bookmarkSelection.has(id)).length;
+    const selectAll = state.bookmarksSelectAll;
+    if (selectAll) {
+      selectAll.disabled = state.exporting || visible.length === 0;
+      selectAll.checked = visible.length > 0 && selectedVisible === visible.length;
+      selectAll.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+    }
+  }
+
+  /** 同步列表中的 checkbox 状态。 */
+  function updateBookmarkCheckboxes() {
+    const list = state.bookmarksList;
+    if (!list) return;
+    for (const row of list.querySelectorAll('.bookmark-item')) {
+      const check = row.querySelector('.bookmark-check');
+      if (check) check.checked = state.bookmarkSelection.has(row.dataset.id);
+    }
+  }
+
+  /** 全选/取消全选当前搜索结果。 */
+  function onToggleSelectAll(event) {
+    const checked = !!event.currentTarget.checked;
+    for (const record of getFilteredSessionBookmarks()) {
+      if (checked) {
+        state.bookmarkSelection.add(record.messageID);
+      } else {
+        state.bookmarkSelection.delete(record.messageID);
+      }
+    }
+    updateBookmarkCheckboxes();
+    syncBookmarkSelectionUi();
+  }
+
+  /** 渲染当前会话的书签列表。 */
+  function renderBookmarksList() {
+    const list = state.bookmarksList;
+    if (!list) return;
+
+    const query = (state.bookmarksSearch?.value || '').trim().toLowerCase();
+    const bookmarks = getFilteredSessionBookmarks();
+
+    list.textContent = '';
+
+    if (bookmarks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'bookmarks-empty';
+      empty.textContent = query
+        ? '没有匹配的书签。'
+        : '还没有书签。悬停提问后点击“收藏”或“备注”即可添加。';
+      list.append(empty);
+      syncBookmarkSelectionUi();
+      return;
+    }
+
+    for (const record of bookmarks) {
+      const item = state.items.find((entry) => entry.id === record.messageID);
+      const row = document.createElement('div');
+      row.className = 'bookmark-item';
+      row.dataset.id = record.messageID;
+
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'bookmark-check';
+      check.checked = state.bookmarkSelection.has(record.messageID);
+      check.title = '选择导出';
+      check.setAttribute('aria-label', '选择这条书签用于导出');
+      check.addEventListener('change', () => {
+        if (check.checked) {
+          state.bookmarkSelection.add(record.messageID);
+        } else {
+          state.bookmarkSelection.delete(record.messageID);
+        }
+        syncBookmarkSelectionUi();
+      });
+
+      const body = document.createElement('div');
+      body.className = 'bookmark-body';
+
+      const jump = document.createElement('button');
+      jump.type = 'button';
+      jump.className = 'bookmark-jump';
+      jump.textContent = item?.display || record.promptPreview || '(空消息)';
+      jump.title = '跳转到这条提问';
+      jump.addEventListener('click', () => {
+        hideBookmarksDrawer();
+        jumpTo(record.messageID);
+      });
+      body.append(jump);
+
+      if (record.note) {
+        const note = document.createElement('div');
+        note.className = 'bookmark-note';
+        note.textContent = record.note;
+        body.append(note);
+      }
+
+      const meta = document.createElement('div');
+      meta.className = 'bookmark-meta';
+      meta.textContent = `更新于 ${formatBookmarkTime(record.updatedAt)}`;
+      body.append(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'bookmark-actions';
+      const editNote = document.createElement('button');
+      editNote.type = 'button';
+      editNote.className = 'bookmark-action';
+      editNote.textContent = record.note ? '编辑备注' : '添加备注';
+      editNote.addEventListener('click', () => openNoteDialog(record.messageID));
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'bookmark-action';
+      remove.textContent = '取消收藏';
+      remove.addEventListener('click', () => removeBookmark(record.messageID));
+      actions.append(editNote, remove);
+      body.append(actions);
+
+      row.append(check, body);
+      list.append(row);
+    }
+
+    syncBookmarkSelectionUi();
+  }
+
+  /** 打开备注编辑弹层。 */
+  function openNoteDialog(messageID) {
+    if (!messageID || !state.noteBackdrop) return;
+    const existing = getBookmark(messageID);
+    state.noteTargetID = messageID;
+    state.noteTitle.textContent = existing ? '编辑备注' : '添加备注';
+    state.noteTextarea.value = existing?.note || '';
+    state.noteBackdrop.dataset.open = 'true';
+    hidePreview();
+    window.requestAnimationFrame(() => {
+      state.noteTextarea.focus();
+      state.noteTextarea.setSelectionRange(
+        state.noteTextarea.value.length,
+        state.noteTextarea.value.length,
+      );
+    });
+  }
+
+  /** 关闭备注弹层。 */
+  function hideNoteDialog() {
+    if (state.noteBackdrop) state.noteBackdrop.dataset.open = 'false';
+    state.noteTargetID = null;
+  }
+
+  /** 保存备注；有备注会自动创建书签。 */
+  function saveNoteDialog() {
+    const messageID = state.noteTargetID;
+    if (!messageID) return;
+    const note = state.noteTextarea.value.trim().slice(0, BOOKMARK_NOTE_LIMIT);
+    if (!note && !getBookmark(messageID)) {
+      hideNoteDialog();
+      return;
+    }
+    setBookmarkNote(messageID, note);
+    hideNoteDialog();
+    showToast(note ? '备注已保存' : '备注已清空');
+  }
+
+  /** 提取用户消息正文。 */
+  function userMessageText(message) {
+    return typeof message?.text === 'string' ? message.text.trim() : '';
+  }
+
+  /** 提取用户消息的附件名称。 */
+  function userAttachmentLines(message) {
+    const files = Array.isArray(message?.files) ? message.files : [];
+    return files
+      .map((file) => (file && (file.name || file.filename)) || '附件')
+      .filter(Boolean)
+      .map((name) => `- 附件：${name}`);
+  }
+
+  /** 提取助手消息的正文和工具调用名称。 */
+  function assistantMessageBlocks(message) {
+    const content = Array.isArray(message?.content) ? message.content : [];
+    const texts = content
+      .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text.trim())
+      .filter(Boolean);
+    const tools = content
+      .filter((part) => part?.type === 'tool')
+      .map((part) => part.name || 'tool');
+
+    return { texts, tools };
+  }
+
+  /** 把消息按用户提问聚合为轮次。 */
+  function buildSessionTurns(messages) {
+    const turns = [];
+    let current = null;
+
+    for (const message of messages) {
+      if (!message) continue;
+      if (message.type === 'user') {
+        current = { user: message, assistants: [] };
+        turns.push(current);
+        continue;
+      }
+      if (message.type === 'assistant' && current) {
+        current.assistants.push(message);
+      }
+    }
+    return turns;
+  }
+
+  /** 生成单个 Q&A 轮次的 Markdown。 */
+  function formatSessionTurn(turn, bookmark) {
+    if (!turn?.user) return '';
+    const lines = [];
+    lines.push(`## ${bookmark ? '⭐ ' : ''}用户`);
+    const userText = userMessageText(turn.user);
+    if (userText) lines.push(userText);
+    lines.push(...userAttachmentLines(turn.user));
+    if (bookmark?.note) {
+      lines.push('', '> 备注：', ...bookmark.note.split(/\r?\n/).map((line) => `> ${line}`));
+    }
+
+    const texts = [];
+    const toolCounts = new Map();
+    for (const assistant of turn.assistants) {
+      const blocks = assistantMessageBlocks(assistant);
+      if (blocks.texts.length) texts.push(blocks.texts.join('\n\n'));
+      for (const name of blocks.tools) {
+        toolCounts.set(name, (toolCounts.get(name) || 0) + 1);
+      }
+    }
+
+    if (texts.length || toolCounts.size) {
+      lines.push('', '## 助手');
+      if (texts.length) lines.push(texts.join('\n\n'));
+      if (toolCounts.size) {
+        const summary = [...toolCounts.entries()]
+          .map(([name, count]) => (count > 1 ? `${name} × ${count}` : name))
+          .join('，');
+        lines.push('', `> 工具调用：${summary}`);
+      }
+    }
+
+    return lines.join('\n').trim();
+  }
+
+  /** 生成导出 Markdown；onlyBookmarks 为 true 时只保留书签轮次。 */
+  function buildExportMarkdown(turns, onlyBookmarks, targetIDs = null) {
+    const bookmarks = new Map(
+      getSessionBookmarks().map((record) => [record.messageID, record]),
+    );
+    const sections = [];
+    const used = new Set();
+
+    for (const turn of turns) {
+      const userId = turn.user?.id;
+      if (targetIDs && !targetIDs.has(userId)) continue;
+      const record = bookmarks.get(userId) || null;
+      if (onlyBookmarks && !record) continue;
+      const section = formatSessionTurn(turn, record);
+      if (!section) continue;
+      sections.push(section);
+      if (userId) used.add(userId);
+    }
+
+    // API 中没返回的旧书签也保留下来，避免导出静默丢失
+    if (onlyBookmarks) {
+      for (const record of getSessionBookmarks()) {
+        if (used.has(record.messageID)) continue;
+        if (targetIDs && !targetIDs.has(record.messageID)) continue;
+        const item = state.items.find((entry) => entry.id === record.messageID);
+        const lines = [`## ⭐ 用户`, item?.display || record.promptPreview || '(空消息)'];
+        if (record.note) {
+          lines.push('', '> 备注：', ...record.note.split(/\r?\n/).map((line) => `> ${line}`));
+        }
+        sections.push(lines.join('\n'));
+      }
+    }
+
+    if (sections.length === 0) return '';
+
+    const title = state.sessionTitle || '未命名会话';
+    const bookmarkTitle = onlyBookmarks
+      ? targetIDs
+        ? ' · 选中书签'
+        : ' · 会话书签'
+      : '';
+    const header = [
+      `# ${title}${bookmarkTitle}`,
+      '',
+      `- 会话 ID：${state.sessionID || ''}`,
+      `- 导出时间：${new Date().toLocaleString('zh-CN')}`,
+      `- 来源：${location.href}`,
+      onlyBookmarks ? `- 书签数量：${sections.length}` : '',
+    ]
+      .filter((line, index, list) => line || list[index - 1] !== '')
+      .join('\n');
+
+    return `${header}\n\n---\n\n${sections.join('\n\n---\n\n')}\n`;
+  }
+
+  /** 把 Markdown 作为文件下载。 */
+  function downloadMarkdown(markdown, suffix) {
+    const title = (state.sessionTitle || 'opencode-session')
+      .replace(/[\\/:*?"<>|\s]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 60);
+    const now = new Date();
+    const stamp = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0'),
+      '-',
+      String(now.getHours()).padStart(2, '0'),
+      String(now.getMinutes()).padStart(2, '0'),
+    ].join('');
+    const filename = `${title || 'opencode-session'}-${suffix}-${stamp}.md`;
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /** 切换导出按钮的忙碌状态。 */
+  function setExporting(value) {
+    state.exporting = value;
+    if (state.bookmarksExportBookmarks) state.bookmarksExportBookmarks.disabled = value;
+    if (state.bookmarksExportSession) state.bookmarksExportSession.disabled = value;
+    if (state.bookmarksExportSelected) {
+      state.bookmarksExportSelected.disabled = value || state.bookmarkSelection.size === 0;
+    }
+    syncBookmarkSelectionUi();
+  }
+
+  /** 导出当前会话的书签及其回答。 */
+  async function exportBookmarksMarkdown(selectedIDs = null) {
+    if (state.exporting || !state.sessionID) return;
+
+    const targets = selectedIDs instanceof Set ? new Set(selectedIDs) : null;
+    if (targets) {
+      for (const id of [...targets]) {
+        if (!getBookmark(id)) targets.delete(id);
+      }
+      if (targets.size === 0) {
+        showToast('请先勾选要导出的书签');
+        return;
+      }
+    } else if (getSessionBookmarks().length === 0) {
+      showToast('当前会话还没有书签');
+      return;
+    }
+
+    setExporting(true);
+    showToast(targets ? '正在整理选中书签…' : '正在整理书签…');
+    const sessionID = state.sessionID;
+    try {
+      const messages = await fetchAllMessages(sessionID);
+      if (state.sessionID !== sessionID) return;
+      const turns = buildSessionTurns(messages);
+      const markdown = buildExportMarkdown(turns, true, targets);
+      if (!markdown) {
+        showToast('没有可导出的书签内容');
+        return;
+      }
+      downloadMarkdown(markdown, targets ? 'bookmarks-selected' : 'bookmarks');
+      showToast(targets ? '选中书签已导出' : '书签已导出');
+      log('已导出会话书签', {
+        sessionID,
+        count: targets ? targets.size : getSessionBookmarks().length,
+        selected: !!targets,
+      });
+    } catch (error) {
+      warn('导出书签失败', error);
+      showToast('导出书签失败，请重试');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  /** 导出当前会话的完整 Markdown。 */
+  async function exportSessionMarkdown() {
+    if (state.exporting || !state.sessionID) return;
+
+    setExporting(true);
+    showToast('正在整理会话…');
+    const sessionID = state.sessionID;
+    try {
+      const messages = await fetchAllMessages(sessionID);
+      if (state.sessionID !== sessionID) return;
+      const turns = buildSessionTurns(messages);
+      const markdown = buildExportMarkdown(turns, false);
+      if (!markdown) {
+        showToast('当前会话没有可导出的内容');
+        return;
+      }
+      downloadMarkdown(markdown, 'session');
+      showToast('会话已导出');
+      log('已导出会话 Markdown', { sessionID, messages: messages.length });
+    } catch (error) {
+      warn('导出会话失败', error);
+      showToast('导出会话失败，请重试');
+    } finally {
+      setExporting(false);
+    }
   }
 
   /** 方向键在 rail 内切换提问，回车跳转。 */
@@ -2046,6 +3573,8 @@
 
     const size = 32;
     const gap = 8;
+    const groupWidth = size * 2 + gap;
+    const trigger = state.bookmarkTrigger;
     const rail = state.rail && !state.rail.hidden ? state.rail : null;
     const railRect = rail ? rail.getBoundingClientRect() : null;
     const rightLimit = Math.min(
@@ -2057,20 +3586,28 @@
     let top = rect.bottom - size;
     let inside = false;
 
-    if (left + size > rightLimit) {
-      left = rect.right - size - gap;
-      top = rect.top + gap;
+    if (left + groupWidth > rightLimit) {
       inside = true;
+      top = rect.top + gap;
+      const bookmarkLeft = rect.right - gap - size;
+      left = bookmarkLeft - gap - size;
     }
 
-    button.style.left = `${Math.round(
-      Math.max(8, Math.min(window.innerWidth - size - 8, left)),
-    )}px`;
-    button.style.top = `${Math.round(
-      Math.max(8, Math.min(window.innerHeight - size - 8, top)),
-    )}px`;
+    left = Math.max(8, Math.min(window.innerWidth - groupWidth - 8, left));
+    top = Math.max(8, Math.min(window.innerHeight - size - 8, top));
+
+    button.style.left = `${Math.round(left)}px`;
+    button.style.top = `${Math.round(top)}px`;
     button.dataset.inside = inside ? 'true' : 'false';
     button.hidden = false;
+
+    if (trigger) {
+      trigger.style.left = `${Math.round(left + size + gap)}px`;
+      trigger.style.top = `${Math.round(top)}px`;
+      trigger.dataset.inside = inside ? 'true' : 'false';
+      trigger.hidden = false;
+    }
+
     if (state.aiMenu?.dataset.open === 'true') positionAiMenu();
   }
 
@@ -2107,6 +3644,7 @@
   /** 隐藏悬浮按钮。 */
   function hideGlmLauncher() {
     if (state.glmLauncher) state.glmLauncher.hidden = true;
+    if (state.bookmarkTrigger) state.bookmarkTrigger.hidden = true;
     hideAiMenu();
   }
 
@@ -2691,6 +4229,10 @@
     }
     state.glmAnchor = null;
     hideGlmLauncher();
+    hideBookmarksDrawer();
+    hideNoteDialog();
+    state.bookmarkSelection.clear();
+    if (state.bookmarksSearch) state.bookmarksSearch.value = '';
     hideJumpOverlay();
     hideToast();
     hidePreview();
@@ -2711,6 +4253,7 @@
   async function loadSession(sessionID) {
     stopSessionWork();
     state.sessionID = sessionID;
+    state.sessionTitle = '';
     state.items = [];
     state.itemIDs = new Set();
     state.activeID = null;
@@ -2733,6 +4276,9 @@
       ]);
 
       if (controller.signal.aborted || state.sessionID !== sessionID) return;
+
+      state.sessionTitle =
+        typeof detail?.title === 'string' && detail.title.trim() ? detail.title.trim() : '';
 
       const revertID = detail?.revert?.messageID ?? null;
       const items = [];
@@ -2878,6 +4424,7 @@
     hidePreview();
     scheduleActiveUpdate();
     scheduleGlmPosition();
+    positionBookmarksTrigger();
   }
 
   /** 页面重新可见时补一次尾部刷新。 */
@@ -2902,6 +4449,10 @@
     ensureUI();
     bindAiSiteStorage();
     void loadAiSite();
+    bindBookmarkStorage();
+    void loadBookmarks();
+    document.addEventListener('keydown', onGlobalKeyDown, true);
+    document.addEventListener('pointerdown', onDocumentPointerDown, true);
     checkRoute();
 
     state.routeTimer = window.setInterval(checkRoute, ROUTE_INTERVAL);
