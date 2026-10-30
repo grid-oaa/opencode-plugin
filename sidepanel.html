@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>智谱清言</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="topbar-title" id="site-title">AI 对话</span>
+      <div class="topbar-actions">
+        <button
+          class="icon-button"
+          id="reload"
+          type="button"
+          title="刷新"
+          aria-label="刷新智谱清言"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M20 12a8 8 0 1 1-2.34-5.66M20 4v6h-6"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+        <button
+          class="icon-button"
+          id="open-tab"
+          type="button"
+          title="在标签页打开"
+          aria-label="在标签页打开智谱清言"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M14 4h6v6M20 4l-8 8M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="panel" id="panel" data-ready="false">
+      <iframe
+        class="frame"
+        id="glm-frame"
+        title="智谱清言"
+        allow="clipboard-read; clipboard-write; microphone"
+      ></iframe>
+
+      <div class="loading" id="loading">
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="loading-label">正在加载 AI 对话…</span>
+      </div>
+
+      <div class="fallback" id="fallback" hidden>
+        <div class="fallback-title" id="fallback-title">AI 对话暂时没有加载出来</div>
+        <p>如果一直空白，可能是登录或第三方 Cookie 限制。</p>
+        <div class="fallback-actions">
+          <button class="fallback-button" id="retry" type="button">重试</button>
+          <button class="fallback-button" id="fallback-open" type="button">
+            在标签页打开
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="ai-sites.js"></script>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

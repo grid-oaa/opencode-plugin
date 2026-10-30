@@ -291,6 +291,159 @@
       animation: oc-pn-spin 700ms linear infinite;
     }
 
+    .glm-launcher {
+      position: fixed;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 55%,
+          transparent
+        );
+      border-radius: 9px;
+      background: color-mix(
+        in srgb,
+        var(--v2-background-bg-base, #fff) 68%,
+        transparent
+      );
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+      color: var(--v2-text-text-muted, #666);
+      cursor: pointer;
+      opacity: 0.72;
+      pointer-events: auto;
+      backdrop-filter: blur(10px);
+      transition:
+        opacity 140ms ease,
+        color 140ms ease,
+        background-color 140ms ease,
+        border-color 140ms ease;
+    }
+
+    .glm-launcher:hover,
+    .glm-launcher:focus-visible {
+      border-color: color-mix(
+        in srgb,
+        var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 85%,
+        transparent
+      );
+      background: var(--v2-background-bg-base, #fff);
+      color: var(--v2-text-text-base, #111);
+      opacity: 1;
+      outline: none;
+    }
+
+    .glm-launcher[data-inside='true'] {
+      background: var(--v2-background-bg-base, #fff);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    }
+
+    .glm-launcher[hidden] {
+      display: none;
+    }
+
+    .ai-menu {
+      position: fixed;
+      z-index: 4;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 60vh;
+      padding: 5px;
+      overflow-y: auto;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 55%,
+          transparent
+        );
+      border-radius: 12px;
+      background: color-mix(
+        in srgb,
+        var(--v2-background-bg-base, #fff) 76%,
+        transparent
+      );
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(6px);
+      pointer-events: none;
+      backdrop-filter: blur(12px);
+      scrollbar-width: none;
+      transition:
+        opacity 120ms ease,
+        transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        visibility 0s linear 140ms;
+    }
+
+    .ai-menu::-webkit-scrollbar {
+      display: none;
+    }
+
+    .ai-menu[data-open='true'] {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+      pointer-events: auto;
+      transition:
+        opacity 120ms ease,
+        transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        visibility 0s;
+    }
+
+    .ai-menu-item {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      padding: 4px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+      transition: background-color 120ms ease;
+    }
+
+    .ai-menu-item img {
+      display: block;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+    }
+
+    .ai-menu-item:hover,
+    .ai-menu-item:focus-visible {
+      background: var(--v2-overlay-simple-overlay-hover, rgba(0, 0, 0, 0.06));
+      outline: none;
+    }
+
+    .ai-menu-item[data-active='true'] {
+      background: color-mix(
+        in srgb,
+        var(--v2-text-text-base, #111) 6%,
+        transparent
+      );
+    }
+
+    .ai-menu-item[data-active='true']::after {
+      content: '';
+      position: absolute;
+      right: 2px;
+      bottom: 2px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--v2-text-text-base, #111);
+      box-shadow: 0 0 0 2px var(--v2-background-bg-base, #fff);
+    }
+
     @keyframes oc-pn-spin {
       to {
         transform: rotate(360deg);
@@ -301,7 +454,9 @@
       .rail,
       .item::before,
       .preview,
-      .toast {
+      .toast,
+      .glm-launcher,
+      .ai-menu {
         animation: none;
         transition: none;
       }
@@ -360,6 +515,8 @@
     error: `<svg data-slot="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`,
   };
 
+  const AI_CHAT_ICON = `<svg data-slot="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 5.5A2.5 2.5 0 0 1 7 3h10a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 17 15h-7l-4.5 3.5V15H7a2.5 2.5 0 0 1-2.5-2.5v-7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+
   const OPTIMIZE_INSTRUCTION = [
     'You are a prompt editor for the next user message.',
     'Rewrite the text inside <draft> so it is clear, specific, and logically structured.',
@@ -402,6 +559,16 @@
     toast: null,
     toastTimer: 0,
     jumpOverlay: null,
+    glmLauncher: null,
+    glmAnchor: null,
+    glmObserver: null,
+    glmFrame: 0,
+    aiSite: 'glm',
+    aiMenu: null,
+    aiMenuShowTimer: 0,
+    aiMenuHideTimer: 0,
+    aiStorageBound: false,
+    suppressAiMenuFocus: false,
   };
 
   function log(...args) {
@@ -623,7 +790,36 @@
     overlayStatus.append(overlaySpinner, overlayLabel);
     overlay.append(overlayStatus);
 
-    shadow.append(rail, preview, overlay, toast);
+    const glmLauncher = document.createElement('button');
+    glmLauncher.type = 'button';
+    glmLauncher.className = 'glm-launcher';
+    glmLauncher.hidden = true;
+    glmLauncher.title = '打开 AI 对话';
+    glmLauncher.setAttribute('aria-label', '打开 AI 对话');
+    glmLauncher.setAttribute('aria-haspopup', 'menu');
+    glmLauncher.setAttribute('aria-expanded', 'false');
+    glmLauncher.innerHTML = AI_CHAT_ICON;
+    glmLauncher.addEventListener('click', openGlmPanel);
+    glmLauncher.addEventListener('pointerenter', scheduleAiMenuShow);
+    glmLauncher.addEventListener('pointerleave', scheduleAiMenuHide);
+    glmLauncher.addEventListener('focus', () => {
+      if (state.suppressAiMenuFocus) return;
+      if (glmLauncher.matches(':focus-visible')) openAiMenu();
+    });
+    glmLauncher.addEventListener('blur', scheduleAiMenuHide);
+    glmLauncher.addEventListener('keydown', onAiTriggerKeyDown);
+
+    const aiMenu = document.createElement('div');
+    aiMenu.className = 'ai-menu';
+    aiMenu.dataset.open = 'false';
+    aiMenu.setAttribute('role', 'menu');
+    aiMenu.setAttribute('aria-label', 'AI 对话站点');
+    aiMenu.addEventListener('pointerenter', cancelAiMenuHide);
+    aiMenu.addEventListener('pointerleave', scheduleAiMenuHide);
+    aiMenu.addEventListener('focusin', cancelAiMenuHide);
+    aiMenu.addEventListener('focusout', onAiMenuFocusOut);
+
+    shadow.append(rail, preview, overlay, glmLauncher, aiMenu, toast);
     document.body.appendChild(host);
 
     state.host = host;
@@ -632,7 +828,12 @@
     state.preview = preview;
     state.previewText = previewText;
     state.jumpOverlay = overlay;
+    state.glmLauncher = glmLauncher;
+    state.aiMenu = aiMenu;
     state.toast = toast;
+
+    renderAiMenu();
+    updateAiTrigger();
 
     log('导航界面已创建');
   }
@@ -1520,6 +1721,395 @@
     return button;
   }
 
+  /** 读取 OpenCode 主题变量，供侧栏加载态和回退卡片使用。 */
+  function readSidePanelTheme() {
+    const style = window.getComputedStyle(document.body);
+    const read = (name) => style.getPropertyValue(name).trim();
+    const theme = {
+      bg: read('--v2-background-bg-base'),
+      text: read('--v2-text-text-base'),
+      muted: read('--v2-text-text-muted'),
+      border: read('--v2-border-border-base'),
+      hover: read('--v2-overlay-simple-overlay-hover'),
+    };
+    return Object.fromEntries(Object.entries(theme).filter(([, value]) => value));
+  }
+
+  /** 返回已配置的 AI 站点；共享配置缺失时使用内置的智谱清言。 */
+  function getAiSites() {
+    const sites = Array.isArray(globalThis.OC_AI_SITES) ? globalThis.OC_AI_SITES : [];
+    if (sites.length) return sites;
+    return [{ id: 'glm', name: '智谱清言', url: 'https://chatglm.cn/', logo: '' }];
+  }
+
+  /** 按 id 解析站点，找不到时使用默认站点。 */
+  function resolveAiSite(siteId) {
+    const sites = getAiSites();
+    return (
+      sites.find((site) => site.id === siteId) ||
+      sites.find((site) => site.id === globalThis.OC_AI_SITE_FALLBACK) ||
+      sites[0]
+    );
+  }
+
+  /** 更新悬浮按钮的提示，显示当前选中的站点。 */
+  function updateAiTrigger() {
+    const button = state.glmLauncher;
+    if (!button) return;
+    const site = resolveAiSite(state.aiSite);
+    const gap = /^[A-Za-z0-9]/.test(site.name) ? ' ' : '';
+    button.title = `选择 AI 对话（当前${gap}${site.name}）`;
+    button.setAttribute('aria-label', `选择 AI 对话，当前${gap}${site.name}`);
+  }
+
+  /** 渲染向上的 AI 站点菜单。 */
+  function renderAiMenu() {
+    const menu = state.aiMenu;
+    if (!menu) return;
+
+    menu.textContent = '';
+    for (const site of getAiSites()) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'ai-menu-item';
+      item.dataset.site = site.id;
+      item.setAttribute('role', 'menuitem');
+      item.setAttribute('tabindex', '-1');
+      item.title = site.name;
+      item.setAttribute('aria-label', `打开${site.name}`);
+
+      if (site.logo) {
+        const image = document.createElement('img');
+        image.src = site.logo;
+        image.alt = '';
+        image.width = 24;
+        image.height = 24;
+        image.draggable = false;
+        item.append(image);
+      } else {
+        item.textContent = site.name.slice(0, 1);
+      }
+
+      item.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectAiSite(site.id);
+      });
+      item.addEventListener('keydown', onAiMenuKeyDown);
+      menu.append(item);
+    }
+
+    updateAiMenuActive();
+  }
+
+  /** 更新菜单中当前站点的选中状态。 */
+  function updateAiMenuActive() {
+    const menu = state.aiMenu;
+    if (!menu) return;
+    for (const item of menu.querySelectorAll('.ai-menu-item')) {
+      if (item.dataset.site === state.aiSite) {
+        item.dataset.active = 'true';
+      } else {
+        delete item.dataset.active;
+      }
+    }
+  }
+
+  /** 把菜单定位到悬浮按钮上方，并避开右侧提问导航。 */
+  function positionAiMenu() {
+    const menu = state.aiMenu;
+    const button = state.glmLauncher;
+    if (!menu || !button || button.hidden) return;
+
+    const buttonRect = button.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const width = menuRect.width || 44;
+    const height = menuRect.height || 84;
+    let left = buttonRect.right - width;
+    let top = buttonRect.top - height - 8;
+
+    const rail = state.rail && !state.rail.hidden ? state.rail : null;
+    const railRect = rail ? rail.getBoundingClientRect() : null;
+    if (railRect) {
+      const overlapsX = left < railRect.right && left + width > railRect.left;
+      const overlapsY = top < railRect.bottom && top + height > railRect.top;
+      if (overlapsX && overlapsY) left = railRect.left - width - 8;
+    }
+
+    left = Math.max(8, Math.min(window.innerWidth - width - 8, left));
+    top = Math.max(8, Math.min(window.innerHeight - height - 8, top));
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+  }
+
+  /** 打开站点菜单；键盘触发时可以聚焦第一项。 */
+  function openAiMenu(focusFirst = false) {
+    const menu = state.aiMenu;
+    const button = state.glmLauncher;
+    if (!menu || !button) return;
+
+    window.clearTimeout(state.aiMenuShowTimer);
+    window.clearTimeout(state.aiMenuHideTimer);
+    state.aiMenuShowTimer = 0;
+    state.aiMenuHideTimer = 0;
+    menu.dataset.open = 'true';
+    button.setAttribute('aria-expanded', 'true');
+    positionAiMenu();
+
+    if (focusFirst === true) {
+      menu.querySelector('.ai-menu-item')?.focus();
+    }
+  }
+
+  /** 延迟展开菜单，避免鼠标划过时误触。 */
+  function scheduleAiMenuShow() {
+    cancelAiMenuHide();
+    const menu = state.aiMenu;
+    if (!menu || menu.dataset.open === 'true') return;
+
+    window.clearTimeout(state.aiMenuShowTimer);
+    state.aiMenuShowTimer = window.setTimeout(() => {
+      state.aiMenuShowTimer = 0;
+      openAiMenu();
+    }, 100);
+  }
+
+  /** 延迟收起菜单，给鼠标从按钮移到菜单留出时间。 */
+  function scheduleAiMenuHide() {
+    window.clearTimeout(state.aiMenuShowTimer);
+    state.aiMenuShowTimer = 0;
+    window.clearTimeout(state.aiMenuHideTimer);
+    state.aiMenuHideTimer = window.setTimeout(() => {
+      state.aiMenuHideTimer = 0;
+      hideAiMenu();
+    }, 220);
+  }
+
+  /** 取消待执行的收起动作。 */
+  function cancelAiMenuHide() {
+    window.clearTimeout(state.aiMenuHideTimer);
+    state.aiMenuHideTimer = 0;
+  }
+
+  /** 收起菜单。 */
+  function hideAiMenu() {
+    window.clearTimeout(state.aiMenuShowTimer);
+    window.clearTimeout(state.aiMenuHideTimer);
+    state.aiMenuShowTimer = 0;
+    state.aiMenuHideTimer = 0;
+    if (state.aiMenu) state.aiMenu.dataset.open = 'false';
+    if (state.glmLauncher) state.glmLauncher.setAttribute('aria-expanded', 'false');
+  }
+
+  /** 处理悬浮按钮的键盘操作。 */
+  function onAiTriggerKeyDown(event) {
+    if (event.key === 'Escape') {
+      hideAiMenu();
+      return;
+    }
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    openAiMenu();
+    const items = [...(state.aiMenu?.querySelectorAll('.ai-menu-item') || [])];
+    if (!items.length) return;
+    const item = event.key === 'ArrowDown' ? items[0] : items[items.length - 1];
+    item.focus();
+  }
+
+  /** 菜单内的方向键、Esc 和焦点管理。 */
+  function onAiMenuKeyDown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      hideAiMenu();
+      const button = state.glmLauncher;
+      if (button) {
+        state.suppressAiMenuFocus = true;
+        button.focus();
+        window.setTimeout(() => {
+          state.suppressAiMenuFocus = false;
+        }, 0);
+      }
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const items = [...(state.aiMenu?.querySelectorAll('.ai-menu-item') || [])];
+    if (!items.length) return;
+    const index = items.indexOf(event.currentTarget);
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    const next = (index + delta + items.length) % items.length;
+    items[next].focus();
+  }
+
+  /** 焦点离开按钮和菜单时收起菜单。 */
+  function onAiMenuFocusOut(event) {
+    const next = event.relatedTarget;
+    if (next && (state.aiMenu?.contains(next) || state.glmLauncher === next)) return;
+    scheduleAiMenuHide();
+  }
+
+  /** 选择 AI 站点：保存选择、收起菜单并打开侧栏。 */
+  function selectAiSite(siteId) {
+    const site = resolveAiSite(siteId);
+    state.aiSite = site.id;
+    updateAiMenuActive();
+    updateAiTrigger();
+    hideAiMenu();
+
+    try {
+      chrome.storage.local.set({ ocAiSite: site.id }).catch(() => {});
+    } catch (error) {
+      warn('保存 AI 站点失败', error);
+    }
+
+    openAiPanel(site.id);
+  }
+
+  /** 请求后台打开指定 AI 站点侧栏。 */
+  function openAiPanel(siteId) {
+    const site = resolveAiSite(siteId);
+    const theme = readSidePanelTheme();
+    try {
+      chrome.runtime.sendMessage(
+        { type: 'open-ai-panel', siteId: site.id, theme },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            warn('打开 AI 对话侧栏失败', chrome.runtime.lastError.message);
+            showToast('请点击浏览器工具栏的扩展图标打开侧栏');
+            return;
+          }
+          if (!response?.ok) {
+            warn('打开 AI 对话侧栏失败', response?.error);
+            showToast('请点击浏览器工具栏的扩展图标打开侧栏');
+            return;
+          }
+          state.aiSite = response.siteId || site.id;
+          updateAiMenuActive();
+          updateAiTrigger();
+        },
+      );
+    } catch (error) {
+      warn('打开 AI 对话侧栏失败', error);
+      showToast('扩展已更新，请刷新页面后重试');
+    }
+  }
+
+  /** 点击悬浮按钮：展开站点菜单；只有点击菜单里的 logo 才打开侧栏。 */
+  function openGlmPanel(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    openAiMenu();
+  }
+
+  /** 从本地存储恢复上次选择的 AI 站点。 */
+  async function loadAiSite() {
+    try {
+      const data = await chrome.storage.local.get('ocAiSite');
+      const site = resolveAiSite(data?.ocAiSite);
+      state.aiSite = site.id;
+      updateAiMenuActive();
+      updateAiTrigger();
+    } catch (error) {
+      warn('读取 AI 站点失败', error);
+    }
+  }
+
+  /** 监听站点选择变化，同步菜单状态。 */
+  function bindAiSiteStorage() {
+    if (state.aiStorageBound) return;
+    state.aiStorageBound = true;
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.ocAiSite) return;
+      const site = resolveAiSite(changes.ocAiSite.newValue);
+      state.aiSite = site.id;
+      updateAiMenuActive();
+      updateAiTrigger();
+    });
+  }
+
+  /** 计算悬浮按钮位置；优先放在输入框右侧并底部对齐，空间不足时放到右上角内侧。 */
+  function positionGlmLauncher(composer = findActiveComposer()) {
+    const button = state.glmLauncher;
+    if (!button) return;
+
+    const form = composer?.form;
+    if (!form || !form.isConnected) {
+      hideGlmLauncher();
+      return;
+    }
+
+    const rect = form.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      hideGlmLauncher();
+      return;
+    }
+
+    const size = 32;
+    const gap = 8;
+    const rail = state.rail && !state.rail.hidden ? state.rail : null;
+    const railRect = rail ? rail.getBoundingClientRect() : null;
+    const rightLimit = Math.min(
+      window.innerWidth - 8,
+      railRect ? railRect.left - 6 : window.innerWidth - 8,
+    );
+
+    let left = rect.right + gap;
+    let top = rect.bottom - size;
+    let inside = false;
+
+    if (left + size > rightLimit) {
+      left = rect.right - size - gap;
+      top = rect.top + gap;
+      inside = true;
+    }
+
+    button.style.left = `${Math.round(
+      Math.max(8, Math.min(window.innerWidth - size - 8, left)),
+    )}px`;
+    button.style.top = `${Math.round(
+      Math.max(8, Math.min(window.innerHeight - size - 8, top)),
+    )}px`;
+    button.dataset.inside = inside ? 'true' : 'false';
+    button.hidden = false;
+    if (state.aiMenu?.dataset.open === 'true') positionAiMenu();
+  }
+
+  /** 合并布局变化，在下一帧重新定位悬浮按钮。 */
+  function scheduleGlmPosition() {
+    if (state.glmFrame) return;
+    state.glmFrame = window.requestAnimationFrame(() => {
+      state.glmFrame = 0;
+      positionGlmLauncher();
+    });
+  }
+
+  /** 确保悬浮按钮跟随当前 Composer；切换会话或 tab 时重新绑定观察器。 */
+  function ensureGlmLauncher(composer) {
+    const button = state.glmLauncher;
+    if (!button) return;
+
+    const form = composer?.form;
+    if (!form) {
+      hideGlmLauncher();
+      return;
+    }
+
+    if (state.glmAnchor !== form) {
+      state.glmObserver?.disconnect();
+      state.glmAnchor = form;
+      state.glmObserver = new ResizeObserver(() => scheduleGlmPosition());
+      state.glmObserver.observe(form);
+    }
+
+    positionGlmLauncher(composer);
+  }
+
+  /** 隐藏悬浮按钮。 */
+  function hideGlmLauncher() {
+    if (state.glmLauncher) state.glmLauncher.hidden = true;
+    hideAiMenu();
+  }
+
   /** 返回优化按钮当前不可用的原因。 */
   function optimizeDisabledReason(task) {
     const editor = task.editor;
@@ -1628,11 +2218,18 @@
   /** 确保当前活动会话的 Composer 中存在优化按钮，同时保留其他 tab 的任务。 */
   function ensureOptimizeButton() {
     const sessionID = parseSessionID();
-    if (!sessionID) return;
+    if (!sessionID) {
+      hideGlmLauncher();
+      return;
+    }
 
     const composer = findActiveComposer();
-    if (!composer) return;
+    if (!composer) {
+      hideGlmLauncher();
+      return;
+    }
 
+    ensureGlmLauncher(composer);
     bindOptimizeTask(getOptimizeTask(sessionID), composer);
   }
 
@@ -2084,6 +2681,16 @@
     for (const button of state.buttons.values()) {
       delete button.dataset.jumping;
     }
+    if (state.glmObserver) {
+      state.glmObserver.disconnect();
+      state.glmObserver = null;
+    }
+    if (state.glmFrame) {
+      window.cancelAnimationFrame(state.glmFrame);
+      state.glmFrame = 0;
+    }
+    state.glmAnchor = null;
+    hideGlmLauncher();
     hideJumpOverlay();
     hideToast();
     hidePreview();
@@ -2270,6 +2877,7 @@
   function onResize() {
     hidePreview();
     scheduleActiveUpdate();
+    scheduleGlmPosition();
   }
 
   /** 页面重新可见时补一次尾部刷新。 */
@@ -2292,6 +2900,8 @@
     }
 
     ensureUI();
+    bindAiSiteStorage();
+    void loadAiSite();
     checkRoute();
 
     state.routeTimer = window.setInterval(checkRoute, ROUTE_INTERVAL);

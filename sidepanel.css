@@ -1,0 +1,209 @@
+:root {
+  color-scheme: light dark;
+  --glm-bg: #ffffff;
+  --glm-text: #111111;
+  --glm-muted: #666666;
+  --glm-border: rgba(0, 0, 0, 0.12);
+  --glm-hover: rgba(0, 0, 0, 0.06);
+  --glm-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glm-bg: #1b1b1b;
+    --glm-text: #f2f2f2;
+    --glm-muted: #9a9a9a;
+    --glm-border: rgba(255, 255, 255, 0.14);
+    --glm-hover: rgba(255, 255, 255, 0.08);
+    --glm-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--glm-bg);
+  color: var(--glm-text);
+  font: 12px/1.45 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--glm-border);
+  background: var(--glm-bg);
+  color: var(--glm-muted);
+}
+
+.topbar-title {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.panel {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--glm-bg);
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--glm-bg);
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--glm-bg);
+  color: var(--glm-muted);
+  transition:
+    opacity 150ms ease,
+    visibility 0s linear 150ms;
+}
+
+.panel[data-ready='true'] .loading {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid color-mix(in srgb, var(--glm-muted) 28%, transparent);
+  border-top-color: var(--glm-muted);
+  border-radius: 50%;
+  animation: oc-glm-spin 0.8s linear infinite;
+}
+
+@keyframes oc-glm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--glm-muted);
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.icon-button:hover,
+.icon-button:focus-visible {
+  background: var(--glm-hover);
+  color: var(--glm-text);
+  outline: none;
+}
+
+.fallback {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  padding: 12px 14px;
+  border: 1px solid var(--glm-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--glm-bg) 94%, transparent);
+  box-shadow: var(--glm-shadow);
+  color: var(--glm-text);
+  backdrop-filter: blur(12px);
+}
+
+.fallback[hidden] {
+  display: none;
+}
+
+.fallback-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fallback p {
+  margin: 4px 0 10px;
+  color: var(--glm-muted);
+  font-size: 12px;
+}
+
+.fallback-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.fallback-button {
+  padding: 5px 9px;
+  border: 1px solid var(--glm-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--glm-text);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+.fallback-button:hover,
+.fallback-button:focus-visible {
+  background: var(--glm-hover);
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1.6s;
+  }
+
+  .loading,
+  .icon-button,
+  .fallback-button {
+    transition: none;
+  }
+}
