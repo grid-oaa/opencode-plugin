@@ -21,6 +21,9 @@
     .oc-session-reference-dialog .oc-ref-project-menu button:hover, .oc-session-reference-dialog .oc-ref-project-menu button:focus-visible { background: var(--v2-overlay-simple-overlay-hover, #ddd); }
     .oc-session-reference-dialog .oc-ref-list { overflow: auto; min-height: 120px; flex: 1; border: 1px solid var(--v2-border-border-base, #aaa); border-radius: 5px; }
     .oc-session-reference-dialog .oc-ref-session { display: block; width: 100%; border: 0; border-radius: 0; text-align: left; border-bottom: 1px solid var(--v2-border-border-base, #ddd); }
+    .oc-session-reference-dialog .oc-ref-session-title, .oc-session-reference-dialog .oc-ref-session-project { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .oc-session-reference-dialog .oc-ref-session-title { font-weight: 600; }
+    .oc-session-reference-dialog .oc-ref-session-project { margin-top: 2px; color: var(--v2-text-text-muted, #666); font-size: 12px; }
     .oc-session-reference-dialog .oc-ref-message { display: flex; align-items: flex-start; gap: 8px; padding: 10px; border-bottom: 1px solid var(--v2-border-border-base, #ddd); }
     .oc-session-reference-dialog .oc-ref-message input { margin-top: 4px; flex: none; }
     .oc-session-reference-dialog .oc-ref-message div { min-width: 0; flex: 1; }
@@ -143,7 +146,13 @@
       }
       for (const item of filtered) {
         const button = document.createElement('button'); button.type = 'button'; button.className = 'oc-ref-session';
-        button.textContent = `${item.title || '未命名会话'} · ${projectName(item.projectID)}`;
+        const title = document.createElement('span'); title.className = 'oc-ref-session-title';
+        title.textContent = item.title || '未命名会话'; title.title = title.textContent;
+        const project = document.createElement('span'); project.className = 'oc-ref-session-project';
+        const projectInfo = projects.find((entry) => entry.id === item.projectID);
+        project.textContent = `项目：${projectInfo?.canonical || projectName(item.projectID)}`;
+        project.title = project.textContent;
+        button.append(title, project);
         button.addEventListener('click', () => void renderMessages(item)); list.appendChild(button);
       }
     }
