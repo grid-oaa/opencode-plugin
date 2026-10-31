@@ -2624,7 +2624,19 @@
         remove.className = 'bookmark-action';
         remove.textContent = '取消收藏';
         remove.addEventListener('click', () => removeBookmarkByKey(key));
-        actions.append(editNote, remove);
+        const insert = document.createElement('button');
+        insert.type = 'button';
+        insert.className = 'bookmark-action';
+        insert.textContent = '插入';
+        insert.title = '将对应回答追加到当前输入框';
+        insert.addEventListener('click', () => void insertBookmarkAnswer(record, insert));
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'bookmark-action';
+        copy.textContent = '复制';
+        copy.title = '复制对应回答';
+        copy.addEventListener('click', () => void copyBookmarkAnswer(record, copy));
+        actions.append(editNote, remove, insert, copy);
         body.append(actions);
 
         row.append(check, body);
@@ -2748,6 +2760,99 @@
       }
     }
     return turns;
+  }
+
+  /** 读取书签提问后的完整回答，直到下一条用户提问。 */
+  async function readBookmarkAnswer(record) {
+    const base = `/api/session/${encodeURIComponent(record.sessionID)}/message`;
+    let url = `${base}?limit=${PAGE_SIZE}&order=asc`;
+    let found = false;
+    const texts = [];
+    for (let page = 0; page < 25; page += 1) {
+      const json = await api(url);
+      if (!Array.isArray(json?.data)) throw new Error('会话消息格式不受支持');
+      for (const message of json.data) {
+        if (message.type === 'user') {
+          if (found) return texts.join('\n\n');
+          found = message.id === record.messageID;
+        } else if (found && message.type === 'assistant') {
+          texts.push(...assistantMessageBlocks(message).texts);
+        }
+      }
+      const next = json.cursor?.next;
+      if (!next || !json.data.length) return texts.join('\n\n');
+      url = `${base}?limit=${PAGE_SIZE}&cursor=${encodeURIComponent(next)}`;
+    }
+    throw new Error('会话消息过多，无法确认回答是否完整');
+  }
+
+  /** 复制书签对应的回答，不修改当前草稿。 */
+  async function copyBookmarkAnswer(record, button) {
+    if (record.server !== location.origin) {
+      showToast('无法读取其他服务器的回答');
+      return;
+    }
+    button.disabled = true;
+    try {
+      const answer = await readBookmarkAnswer(record);
+      if (!answer.trim()) {
+        showToast('未找到这条书签对应的回答');
+        return;
+      }
+      await navigator.clipboard.writeText(answer);
+      showToast('已复制书签回答');
+      log('已复制书签回答');
+    } catch (error) {
+      warn('复制书签回答失败', error);
+      showToast('复制失败，请检查剪贴板权限或稍后重试');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  /** 将书签对应的回答追加到当前会话草稿，不修改现有内容。 */
+  async function insertBookmarkAnswer(record, button) {
+    if (record.server !== location.origin) {
+      showToast('无法读取其他服务器的回答');
+      return;
+    }
+    const sessionID = parseSessionID();
+    const editor = findActiveComposer()?.editor;
+    if (!sessionID || !editor) {
+      showToast('请先打开要插入的会话');
+      return;
+    }
+    button.disabled = true;
+    try {
+      const answer = await readBookmarkAnswer(record);
+      if (!answer.trim()) {
+        showToast('未找到这条书签对应的回答');
+        return;
+      }
+      if (parseSessionID() !== sessionID || !editor.isConnected || findActiveComposer()?.editor !== editor) {
+        showToast('当前会话或输入框已变化，请重新插入');
+        return;
+      }
+      const prefix = editor.textContent?.replace(/\u200B/g, '').trim() ? '\n\n' : '';
+      const text = prefix + answer;
+      editor.appendChild(document.createTextNode(text));
+      hideBookmarksDrawer();
+      editor.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+      showToast('已将回答追加到输入框');
+      log('已将书签回答插入当前会话');
+    } catch (error) {
+      warn('插入书签回答失败', error);
+      showToast(`读取回答失败：${error.message || '请重试'}`);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   /** 生成单个 Q&A 轮次的 Markdown，headingLevel 用于全局导出时嵌套会话标题。 */
