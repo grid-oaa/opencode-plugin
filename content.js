@@ -493,14 +493,38 @@
     .bookmarks-selectbar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 7px;
       padding: 0 12px 8px;
       color: var(--v2-text-text-muted, #666);
       font-size: 11px;
     }
 
+    .bookmarks-session-filter {
+      flex: 1;
+      min-width: 0;
+      height: 26px;
+      padding: 0 5px;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 55%,
+          transparent
+        );
+      border-radius: 7px;
+      background: transparent;
+      color: var(--v2-text-text-base, #111);
+      font: inherit;
+      font-size: 11px;
+      outline: none;
+    }
+
+    .bookmarks-session-filter:focus {
+      border-color: var(--v2-border-border-focus, #3b82f6);
+    }
+
     .bookmarks-select-all {
       display: flex;
+      flex: 0 0 auto;
       align-items: center;
       gap: 6px;
       cursor: pointer;
@@ -516,8 +540,132 @@
     }
 
     .bookmarks-selected-count {
+      flex: 0 0 auto;
       color: var(--v2-text-text-muted, #666);
       font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .bookmark-group {
+      padding-top: 1px;
+    }
+
+    .bookmark-group + .bookmark-group {
+      margin-top: 4px;
+      border-top: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 22%,
+          transparent
+        );
+    }
+
+    .bookmark-group-head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 6px 4px;
+      background: var(--v2-background-bg-layer-01, #fff);
+    }
+
+    .bookmark-group-toggle {
+      display: flex;
+      flex: 1;
+      min-width: 0;
+      align-items: center;
+      gap: 5px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .bookmark-group-toggle:focus-visible {
+      text-decoration: underline;
+      outline: none;
+    }
+
+    .bookmark-group-toggle svg {
+      flex: 0 0 auto;
+      color: var(--v2-text-text-muted, #666);
+      transition: transform 140ms ease;
+    }
+
+    .bookmark-group-toggle[data-collapsed='true'] svg {
+      transform: rotate(0deg);
+    }
+
+    .bookmark-group-toggle[data-collapsed='false'] svg {
+      transform: rotate(90deg);
+    }
+
+    .bookmark-group-toggle:hover .bookmark-session-title {
+      text-decoration: underline;
+    }
+
+    .bookmark-session-title {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--v2-text-text-base, #111);
+      font-size: 11px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bookmark-group-count {
+      flex: 0 0 auto;
+      color: var(--v2-text-text-muted, #666);
+      font-size: 10px;
+    }
+
+    .bookmark-current {
+      flex: 0 0 auto;
+      padding: 1px 5px;
+      border-radius: 999px;
+      background: color-mix(
+        in srgb,
+        var(--v2-text-text-base, #111) 8%,
+        transparent
+      );
+      color: var(--v2-text-text-muted, #666);
+      font-size: 9px;
+      line-height: 1.3;
+    }
+
+    .bookmark-group-open {
+      flex: 0 0 auto;
+      padding: 1px 6px;
+      border: 1px solid
+        color-mix(
+          in srgb,
+          var(--v2-border-border-base, rgba(128, 128, 128, 0.25)) 55%,
+          transparent
+        );
+      border-radius: 5px;
+      background: transparent;
+      color: var(--v2-text-text-muted, #666);
+      font: inherit;
+      font-size: 10px;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+
+    .bookmark-group-open:hover,
+    .bookmark-group-open:focus-visible {
+      background: var(--v2-overlay-simple-overlay-hover, rgba(0, 0, 0, 0.06));
+      color: var(--v2-text-text-base, #111);
+      outline: none;
+    }
+
+    .bookmark-group[data-collapsed='true'] .bookmark-item {
+      display: none;
     }
 
     .bookmark-item {
@@ -1085,6 +1233,7 @@
     previewTimer: 0,
     lastTailError: null,
     selectionLock: null,
+    pendingHashJump: null,
     jumpToken: 0,
     jumpingID: null,
     ignoreUserIntent: false,
@@ -1106,20 +1255,23 @@
     bookmarkStorageBound: false,
     bookmarkTrigger: null,
     bookmarksDrawer: null,
+    bookmarksTitle: null,
     bookmarksSearch: null,
+    bookmarksSessionFilter: null,
     bookmarksList: null,
     bookmarksEmpty: null,
     bookmarksOpen: false,
     noteBackdrop: null,
     noteTextarea: null,
     noteTitle: null,
-    noteTargetID: null,
+    noteTargetKey: null,
     exporting: false,
     previewID: null,
     previewBookmarkButton: null,
     bookmarksExportBookmarks: null,
     bookmarksExportSession: null,
     bookmarkSelection: new Set(),
+    expandedBookmarkGroups: new Set(),
     bookmarksSelectAll: null,
     bookmarksSelectedCount: null,
     bookmarksExportSelected: null,
@@ -1309,8 +1461,14 @@
     };
   }
 
+  /** 返回一条书签在存储中的唯一 key。 */
+  function bookmarkRecordKey(record) {
+    return `${record.server}|${record.sessionID}|${record.messageID}`;
+  }
+
   /** 返回书签在当前 server/session 下的稳定 key。 */
   function bookmarkKey(messageID) {
+    if (!state.sessionID || !messageID) return '';
     return `${location.origin}|${state.sessionID}|${messageID}`;
   }
 
@@ -1338,6 +1496,108 @@
       });
   }
 
+  /** 返回全部会话的书签记录，按更新时间倒序。 */
+  function getAllBookmarks() {
+    return [...state.bookmarks.values()]
+      .filter(
+        (record) =>
+          record &&
+          typeof record.messageID === 'string' &&
+          typeof record.server === 'string' &&
+          typeof record.sessionID === 'string',
+      )
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+  }
+
+  /** 返回当前 server 在 Web UI 中的路径前缀；首页没有会话路径时按 origin 反推。 */
+  function getSessionBasePath() {
+    const match = location.pathname.match(/^(\/server\/[^/]+)\/session\//);
+    if (match) return match[1];
+
+    try {
+      const encoded = btoa(location.origin).replace(/=+$/, '');
+      return `/server/${encoded}`;
+    } catch {
+      return '';
+    }
+  }
+
+  /** 返回书签所属会话在 Web UI 中的路径。 */
+  function getBookmarkSessionPath(record) {
+    if (typeof record.sessionPath === 'string' && record.sessionPath) {
+      return record.sessionPath;
+    }
+    if (record.server !== location.origin) return '';
+    const base = getSessionBasePath();
+    return base ? `${base}/session/${encodeURIComponent(record.sessionID)}` : '';
+  }
+
+  /** 返回书签会话的完整 URL，可选携带消息定位 hash。 */
+  function getBookmarkURL(record, withMessage = false) {
+    const path = getBookmarkSessionPath(record);
+    if (!path) return '';
+    const url = `${record.server}${path}`;
+    return withMessage
+      ? `${url}#message-${encodeURIComponent(record.messageID)}`
+      : url;
+  }
+
+  /** 返回书签对应的提问文本，当前会话优先使用时间线里的最新内容。 */
+  function getBookmarkPrompt(record) {
+    if (record.server === location.origin && record.sessionID === state.sessionID) {
+      const item = state.items.find((entry) => entry.id === record.messageID);
+      if (item?.display) return item.display;
+    }
+    return record.promptPreview || '(空消息)';
+  }
+
+  /** 把书签按会话分组，组内按消息顺序排列。 */
+  function getBookmarkGroups(records) {
+    const order = new Map(state.items.map((item, index) => [item.id, index]));
+    const groups = new Map();
+
+    for (const record of records) {
+      const key = `${record.server}|${record.sessionID}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          key,
+          server: record.server,
+          sessionID: record.sessionID,
+          title: record.sessionTitle || '',
+          path: getBookmarkSessionPath(record),
+          records: [],
+          latest: 0,
+        };
+        groups.set(key, group);
+      }
+
+      group.records.push(record);
+      group.latest = Math.max(group.latest, record.updatedAt);
+      if (!group.title && record.sessionTitle) group.title = record.sessionTitle;
+      if (!group.path) group.path = getBookmarkSessionPath(record);
+    }
+
+    for (const group of groups.values()) {
+      if (group.server === location.origin && group.sessionID === state.sessionID) {
+        if (state.sessionTitle) group.title = state.sessionTitle;
+      }
+      if (!group.title) {
+        group.title = `会话 ${group.sessionID.slice(-6)}`;
+      }
+
+      group.records.sort((left, right) => {
+        const leftIndex = order.has(left.messageID) ? order.get(left.messageID) : 999999;
+        const rightIndex = order.has(right.messageID) ? order.get(right.messageID) : 999999;
+        return leftIndex - rightIndex || left.createdAt - right.createdAt;
+      });
+    }
+
+    return [...groups.values()].sort(
+      (left, right) => right.latest - left.latest || left.title.localeCompare(right.title),
+    );
+  }
+
   /** 解析本地存储中的书签对象。 */
   function parseBookmarks(raw) {
     const map = new Map();
@@ -1351,6 +1611,7 @@
         server: record.server,
         sessionID: record.sessionID,
         sessionTitle: typeof record.sessionTitle === 'string' ? record.sessionTitle : '',
+        sessionPath: typeof record.sessionPath === 'string' ? record.sessionPath : '',
         messageID: record.messageID,
         promptPreview:
           typeof record.promptPreview === 'string'
@@ -1456,6 +1717,7 @@
       server: location.origin,
       sessionID: state.sessionID,
       sessionTitle: state.sessionTitle || '',
+      sessionPath: location.pathname,
       messageID,
       promptPreview: prompt.slice(0, BOOKMARK_PREVIEW_LIMIT),
       note: note.slice(0, BOOKMARK_NOTE_LIMIT),
@@ -1464,38 +1726,21 @@
     };
   }
 
-  /** 保存备注；备注为空且尚未收藏时不创建记录。 */
-  function setBookmarkNote(messageID, note) {
-    if (!state.sessionID || !messageID) return false;
-    const key = bookmarkKey(messageID);
-    const existing = state.bookmarks.get(key);
-    const value = note.trim().slice(0, BOOKMARK_NOTE_LIMIT);
-    if (!value && !existing) return false;
-
-    if (existing) {
-      existing.note = value;
-      existing.updatedAt = Date.now();
-      existing.sessionTitle = state.sessionTitle || existing.sessionTitle;
-    } else {
-      state.bookmarks.set(key, createBookmarkRecord(messageID, value));
-    }
-
-    void persistBookmarks();
-    syncBookmarkUi();
-    return true;
-  }
-
-  /** 删除指定书签（包含备注）。 */
-  function removeBookmark(messageID) {
-    if (!state.sessionID || !messageID) return;
-    const key = bookmarkKey(messageID);
+  /** 按存储 key 删除书签（包含备注）。 */
+  function removeBookmarkByKey(key) {
     const existing = state.bookmarks.get(key);
     if (!existing) return;
     state.bookmarks.delete(key);
-    state.bookmarkSelection.delete(messageID);
+    state.bookmarkSelection.delete(key);
     void persistBookmarks();
     syncBookmarkUi();
     showToast(existing.note ? '已取消收藏，备注一并删除' : '已取消收藏');
+  }
+
+  /** 删除当前会话的指定书签（包含备注）。 */
+  function removeBookmark(messageID) {
+    if (!state.sessionID || !messageID) return;
+    removeBookmarkByKey(bookmarkKey(messageID));
   }
 
   /** 收藏 / 取消收藏一条提问。 */
@@ -1598,41 +1843,59 @@
     trigger.type = 'button';
     trigger.className = 'bookmarks-trigger';
     trigger.hidden = true;
-    trigger.title = '会话书签（Alt+B）';
-    trigger.setAttribute('aria-label', '打开会话书签');
+    trigger.title = '全局书签（Alt+B）';
+    trigger.setAttribute('aria-label', '打开全局书签');
     trigger.innerHTML = BOOKMARK_ICON;
 
     const drawer = document.createElement('aside');
     drawer.className = 'bookmarks-drawer';
     drawer.dataset.open = 'false';
-    drawer.setAttribute('aria-label', '会话书签');
+    drawer.setAttribute('aria-label', '全局书签');
     drawer.setAttribute('role', 'complementary');
 
     const head = document.createElement('div');
     head.className = 'bookmarks-head';
     const title = document.createElement('div');
     title.className = 'bookmarks-title';
-    title.textContent = '会话书签';
+    title.textContent = '全局书签';
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'bookmarks-close';
     close.textContent = '×';
-    close.title = '关闭书签';
-    close.setAttribute('aria-label', '关闭会话书签');
+    close.title = '关闭全局书签';
+    close.setAttribute('aria-label', '关闭全局书签');
     head.append(title, close);
 
     const search = document.createElement('input');
     search.type = 'search';
     search.className = 'bookmarks-search';
-    search.placeholder = '搜索书签…';
-    search.setAttribute('aria-label', '搜索会话书签');
-    search.addEventListener('input', renderBookmarksList);
+    search.placeholder = '搜索提问、备注或会话…';
+    search.setAttribute('aria-label', '搜索全局书签');
+    let hadSearchQuery = false;
+    search.addEventListener('input', () => {
+      const hasQuery = !!search.value.trim();
+      if (hasQuery && !hadSearchQuery) {
+        for (const group of getBookmarkGroups(getAllBookmarks())) {
+          state.expandedBookmarkGroups.add(group.key);
+        }
+      }
+      hadSearchQuery = hasQuery;
+      renderBookmarksList();
+    });
 
     const list = document.createElement('div');
     list.className = 'bookmarks-list';
 
     const selectBar = document.createElement('div');
     selectBar.className = 'bookmarks-selectbar';
+    const sessionFilter = document.createElement('select');
+    sessionFilter.className = 'bookmarks-session-filter';
+    sessionFilter.title = '按会话筛选';
+    sessionFilter.setAttribute('aria-label', '按会话筛选书签');
+    sessionFilter.addEventListener('change', () => {
+      if (sessionFilter.value) state.expandedBookmarkGroups.add(sessionFilter.value);
+      renderBookmarksList();
+    });
     const selectAllLabel = document.createElement('label');
     selectAllLabel.className = 'bookmarks-select-all';
     const selectAll = document.createElement('input');
@@ -1645,7 +1908,7 @@
     const selectedCount = document.createElement('span');
     selectedCount.className = 'bookmarks-selected-count';
     selectedCount.textContent = '已选 0 条';
-    selectBar.append(selectAllLabel, selectedCount);
+    selectBar.append(sessionFilter, selectAllLabel, selectedCount);
 
     const foot = document.createElement('div');
     foot.className = 'bookmarks-foot';
@@ -1666,7 +1929,7 @@
     exportBookmarks.type = 'button';
     exportBookmarks.className = 'bookmark-export';
     exportBookmarks.textContent = '全部书签';
-    exportBookmarks.title = '把当前会话的全部书签导出为 Markdown';
+    exportBookmarks.title = '把所有会话的书签导出为 Markdown';
     exportBookmarks.addEventListener('click', () => {
       void exportBookmarksMarkdown();
     });
@@ -1737,7 +2000,9 @@
 
     state.bookmarkTrigger = trigger;
     state.bookmarksDrawer = drawer;
+    state.bookmarksTitle = title;
     state.bookmarksSearch = search;
+    state.bookmarksSessionFilter = sessionFilter;
     state.bookmarksList = list;
     state.bookmarksExportBookmarks = exportBookmarks;
     state.bookmarksExportSession = exportSession;
@@ -2068,22 +2333,58 @@
     if (state.bookmarksDrawer) state.bookmarksDrawer.dataset.open = 'false';
   }
 
-  /** 返回当前搜索条件下的书签列表。 */
-  function getFilteredSessionBookmarks() {
+  /** 同步“按会话筛选”下拉框，保留仍然存在的选择。 */
+  function syncBookmarkSessionFilter(allBookmarks = getAllBookmarks()) {
+    const select = state.bookmarksSessionFilter;
+    if (!select) return;
+
+    const previous = select.value;
+    const groups = getBookmarkGroups(allBookmarks);
+    select.textContent = '';
+
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = `全部会话（${allBookmarks.length}）`;
+    select.append(all);
+
+    for (const group of groups) {
+      const option = document.createElement('option');
+      option.value = group.key;
+      option.textContent = `${group.title}（${group.records.length}）`;
+      select.append(option);
+    }
+
+    select.value = groups.some((group) => group.key === previous) ? previous : '';
+  }
+
+  /** 返回当前搜索和会话筛选条件下的全局书签。 */
+  function getFilteredBookmarks(allBookmarks = getAllBookmarks()) {
     const query = (state.bookmarksSearch?.value || '').trim().toLowerCase();
-    return getSessionBookmarks().filter((record) => {
+    const sessionKey = state.bookmarksSessionFilter?.value || '';
+
+    return allBookmarks.filter((record) => {
+      if (sessionKey && `${record.server}|${record.sessionID}` !== sessionKey) {
+        return false;
+      }
       if (!query) return true;
-      const item = state.items.find((entry) => entry.id === record.messageID);
-      const text = `${item?.display || record.promptPreview || ''}\n${record.note || ''}`;
+      const text = `${record.sessionTitle || ''}\n${getBookmarkPrompt(record)}\n${record.note || ''}`;
       return text.toLowerCase().includes(query);
     });
   }
 
   /** 同步勾选数量、全选框和“导出选中”按钮。 */
   function syncBookmarkSelectionUi() {
-    const current = new Set(getSessionBookmarks().map((record) => record.messageID));
-    for (const id of [...state.bookmarkSelection]) {
-      if (!current.has(id)) state.bookmarkSelection.delete(id);
+    const all = getAllBookmarks();
+    syncBookmarkSessionFilter(all);
+
+    const groupKeys = new Set(getBookmarkGroups(all).map((group) => group.key));
+    for (const key of [...state.expandedBookmarkGroups]) {
+      if (!groupKeys.has(key)) state.expandedBookmarkGroups.delete(key);
+    }
+
+    const current = new Set(all.map(bookmarkRecordKey));
+    for (const key of [...state.bookmarkSelection]) {
+      if (!current.has(key)) state.bookmarkSelection.delete(key);
     }
 
     const selected = state.bookmarkSelection.size;
@@ -2094,8 +2395,8 @@
       state.bookmarksExportSelected.disabled = state.exporting || selected === 0;
     }
 
-    const visible = getFilteredSessionBookmarks().map((record) => record.messageID);
-    const selectedVisible = visible.filter((id) => state.bookmarkSelection.has(id)).length;
+    const visible = getFilteredBookmarks(all).map(bookmarkRecordKey);
+    const selectedVisible = visible.filter((key) => state.bookmarkSelection.has(key)).length;
     const selectAll = state.bookmarksSelectAll;
     if (selectAll) {
       selectAll.disabled = state.exporting || visible.length === 0;
@@ -2110,119 +2411,239 @@
     if (!list) return;
     for (const row of list.querySelectorAll('.bookmark-item')) {
       const check = row.querySelector('.bookmark-check');
-      if (check) check.checked = state.bookmarkSelection.has(row.dataset.id);
+      if (check) check.checked = state.bookmarkSelection.has(row.dataset.key);
     }
   }
 
   /** 全选/取消全选当前搜索结果。 */
   function onToggleSelectAll(event) {
     const checked = !!event.currentTarget.checked;
-    for (const record of getFilteredSessionBookmarks()) {
+    for (const record of getFilteredBookmarks()) {
+      const key = bookmarkRecordKey(record);
       if (checked) {
-        state.bookmarkSelection.add(record.messageID);
+        state.bookmarkSelection.add(key);
       } else {
-        state.bookmarkSelection.delete(record.messageID);
+        state.bookmarkSelection.delete(key);
       }
     }
     updateBookmarkCheckboxes();
     syncBookmarkSelectionUi();
   }
 
-  /** 渲染当前会话的书签列表。 */
+  /** 打开一条书签所属的会话，必要时定位到具体提问。 */
+  function openBookmark(record, withMessage) {
+    if (!record) return;
+
+    if (record.server === location.origin && record.sessionID === state.sessionID) {
+      hideBookmarksDrawer();
+      if (withMessage) void jumpTo(record.messageID);
+      return;
+    }
+
+    const url = getBookmarkURL(record, withMessage);
+    if (!url) {
+      showToast('找不到该会话地址，请先打开一次该会话');
+      return;
+    }
+
+    hideBookmarksDrawer();
+    if (record.server === location.origin) {
+      location.assign(url);
+    } else {
+      window.open(url, '_blank', 'noopener');
+    }
+  }
+
+  /** 折叠 / 展开一个会话分组。 */
+  function toggleBookmarkGroup(groupKey, groupEl) {
+    const wasExpanded = state.expandedBookmarkGroups.has(groupKey);
+    if (wasExpanded) {
+      state.expandedBookmarkGroups.delete(groupKey);
+    } else {
+      state.expandedBookmarkGroups.add(groupKey);
+    }
+
+    const collapsed = wasExpanded;
+    groupEl.dataset.collapsed = collapsed ? 'true' : 'false';
+    const toggle = groupEl.querySelector('.bookmark-group-toggle');
+    if (toggle) {
+      toggle.dataset.collapsed = collapsed ? 'true' : 'false';
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.title = collapsed ? '展开这个会话的书签' : '折叠这个会话的书签';
+    }
+    syncBookmarkSelectionUi();
+  }
+
+  /** 渲染全局书签列表，按会话分组显示。 */
   function renderBookmarksList() {
     const list = state.bookmarksList;
     if (!list) return;
 
-    const query = (state.bookmarksSearch?.value || '').trim().toLowerCase();
-    const bookmarks = getFilteredSessionBookmarks();
+    const all = getAllBookmarks();
+    syncBookmarkSessionFilter(all);
+    const bookmarks = getFilteredBookmarks(all);
+    const groups = getBookmarkGroups(bookmarks);
+    const allGroups = getBookmarkGroups(all);
+    const query = (state.bookmarksSearch?.value || '').trim();
+
+    if (state.bookmarksTitle) {
+      state.bookmarksTitle.textContent = all.length
+        ? `全局书签 · ${all.length} 条 / ${allGroups.length} 个会话`
+        : '全局书签';
+    }
 
     list.textContent = '';
 
-    if (bookmarks.length === 0) {
+    if (all.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'bookmarks-empty';
-      empty.textContent = query
-        ? '没有匹配的书签。'
-        : '还没有书签。悬停提问后点击“收藏”或“备注”即可添加。';
+      empty.textContent = '还没有书签。在任意会话中悬停提问后点击“收藏”或“备注”即可添加。';
       list.append(empty);
       syncBookmarkSelectionUi();
       return;
     }
 
-    for (const record of bookmarks) {
-      const item = state.items.find((entry) => entry.id === record.messageID);
-      const row = document.createElement('div');
-      row.className = 'bookmark-item';
-      row.dataset.id = record.messageID;
+    if (bookmarks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'bookmarks-empty';
+      empty.textContent = query ? '没有匹配的书签。' : '当前筛选条件下没有书签。';
+      list.append(empty);
+      syncBookmarkSelectionUi();
+      return;
+    }
 
-      const check = document.createElement('input');
-      check.type = 'checkbox';
-      check.className = 'bookmark-check';
-      check.checked = state.bookmarkSelection.has(record.messageID);
-      check.title = '选择导出';
-      check.setAttribute('aria-label', '选择这条书签用于导出');
-      check.addEventListener('change', () => {
-        if (check.checked) {
-          state.bookmarkSelection.add(record.messageID);
-        } else {
-          state.bookmarkSelection.delete(record.messageID);
-        }
-        syncBookmarkSelectionUi();
-      });
+    for (const group of groups) {
+      const groupEl = document.createElement('div');
+      groupEl.className = 'bookmark-group';
+      const collapsed = !state.expandedBookmarkGroups.has(group.key);
+      groupEl.dataset.collapsed = collapsed ? 'true' : 'false';
 
-      const body = document.createElement('div');
-      body.className = 'bookmark-body';
+      const head = document.createElement('div');
+      head.className = 'bookmark-group-head';
 
-      const jump = document.createElement('button');
-      jump.type = 'button';
-      jump.className = 'bookmark-jump';
-      jump.textContent = item?.display || record.promptPreview || '(空消息)';
-      jump.title = '跳转到这条提问';
-      jump.addEventListener('click', () => {
-        hideBookmarksDrawer();
-        jumpTo(record.messageID);
-      });
-      body.append(jump);
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'bookmark-group-toggle';
+      toggle.dataset.collapsed = collapsed ? 'true' : 'false';
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.title = collapsed ? '展开这个会话的书签' : '折叠这个会话的书签';
+      toggle.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="bookmark-session-title"></span>`;
+      toggle.querySelector('.bookmark-session-title').textContent = group.title;
+      toggle.addEventListener('click', () => toggleBookmarkGroup(group.key, groupEl));
 
-      if (record.note) {
-        const note = document.createElement('div');
-        note.className = 'bookmark-note';
-        note.textContent = record.note;
-        body.append(note);
+      const count = document.createElement('span');
+      count.className = 'bookmark-group-count';
+      count.textContent = `${group.records.length} 条`;
+
+      head.append(toggle, count);
+
+      const isCurrentGroup =
+        group.server === location.origin && group.sessionID === state.sessionID;
+      if (isCurrentGroup) {
+        const current = document.createElement('span');
+        current.className = 'bookmark-current';
+        current.textContent = '当前';
+        head.append(current);
+      } else {
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'bookmark-group-open';
+        open.textContent = '打开';
+        open.title = '打开这个会话';
+        open.addEventListener('click', () => openBookmark(group.records[0], false));
+        head.append(open);
       }
 
-      const meta = document.createElement('div');
-      meta.className = 'bookmark-meta';
-      meta.textContent = `更新于 ${formatBookmarkTime(record.updatedAt)}`;
-      body.append(meta);
+      groupEl.append(head);
 
-      const actions = document.createElement('div');
-      actions.className = 'bookmark-actions';
-      const editNote = document.createElement('button');
-      editNote.type = 'button';
-      editNote.className = 'bookmark-action';
-      editNote.textContent = record.note ? '编辑备注' : '添加备注';
-      editNote.addEventListener('click', () => openNoteDialog(record.messageID));
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'bookmark-action';
-      remove.textContent = '取消收藏';
-      remove.addEventListener('click', () => removeBookmark(record.messageID));
-      actions.append(editNote, remove);
-      body.append(actions);
+      for (const record of group.records) {
+        const key = bookmarkRecordKey(record);
+        const isCurrent =
+          record.server === location.origin && record.sessionID === state.sessionID;
+        const row = document.createElement('div');
+        row.className = 'bookmark-item';
+        row.dataset.key = key;
 
-      row.append(check, body);
-      list.append(row);
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.className = 'bookmark-check';
+        check.checked = state.bookmarkSelection.has(key);
+        check.title = '选择导出';
+        check.setAttribute('aria-label', '选择这条书签用于导出');
+        check.addEventListener('change', () => {
+          if (check.checked) {
+            state.bookmarkSelection.add(key);
+          } else {
+            state.bookmarkSelection.delete(key);
+          }
+          syncBookmarkSelectionUi();
+        });
+
+        const body = document.createElement('div');
+        body.className = 'bookmark-body';
+
+        const jump = document.createElement('button');
+        jump.type = 'button';
+        jump.className = 'bookmark-jump';
+        jump.textContent = getBookmarkPrompt(record);
+        jump.title = isCurrent ? '跳转到这条提问' : '打开会话并定位到这条提问';
+        jump.addEventListener('click', () => openBookmark(record, true));
+        body.append(jump);
+
+        if (record.note) {
+          const note = document.createElement('div');
+          note.className = 'bookmark-note';
+          note.textContent = record.note;
+          body.append(note);
+        }
+
+        const meta = document.createElement('div');
+        meta.className = 'bookmark-meta';
+        meta.textContent = `更新于 ${formatBookmarkTime(record.updatedAt)}`;
+        body.append(meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'bookmark-actions';
+
+        if (!isCurrent) {
+          const open = document.createElement('button');
+          open.type = 'button';
+          open.className = 'bookmark-action';
+          open.textContent = '打开会话';
+          open.addEventListener('click', () => openBookmark(record, false));
+          actions.append(open);
+        }
+
+        const editNote = document.createElement('button');
+        editNote.type = 'button';
+        editNote.className = 'bookmark-action';
+        editNote.textContent = record.note ? '编辑备注' : '添加备注';
+        editNote.addEventListener('click', () => openNoteDialogByKey(key));
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'bookmark-action';
+        remove.textContent = '取消收藏';
+        remove.addEventListener('click', () => removeBookmarkByKey(key));
+        actions.append(editNote, remove);
+        body.append(actions);
+
+        row.append(check, body);
+        groupEl.append(row);
+      }
+
+      list.append(groupEl);
     }
 
     syncBookmarkSelectionUi();
   }
 
-  /** 打开备注编辑弹层。 */
-  function openNoteDialog(messageID) {
-    if (!messageID || !state.noteBackdrop) return;
-    const existing = getBookmark(messageID);
-    state.noteTargetID = messageID;
+  /** 按存储 key 打开备注弹层；allowCreate 用于给未收藏的提问直接写备注。 */
+  function openNoteDialogByKey(key, allowCreate = false) {
+    if (!key || !state.noteBackdrop) return;
+    const existing = state.bookmarks.get(key);
+    if (!existing && !allowCreate) return;
+
+    state.noteTargetKey = key;
     state.noteTitle.textContent = existing ? '编辑备注' : '添加备注';
     state.noteTextarea.value = existing?.note || '';
     state.noteBackdrop.dataset.open = 'true';
@@ -2236,22 +2657,48 @@
     });
   }
 
+  /** 打开当前会话某条提问的备注弹层。 */
+  function openNoteDialog(messageID) {
+    if (!state.sessionID || !messageID) return;
+    openNoteDialogByKey(bookmarkKey(messageID), true);
+  }
+
   /** 关闭备注弹层。 */
   function hideNoteDialog() {
     if (state.noteBackdrop) state.noteBackdrop.dataset.open = 'false';
-    state.noteTargetID = null;
+    state.noteTargetKey = null;
   }
 
   /** 保存备注；有备注会自动创建书签。 */
   function saveNoteDialog() {
-    const messageID = state.noteTargetID;
-    if (!messageID) return;
+    const key = state.noteTargetKey;
+    if (!key) return;
+
     const note = state.noteTextarea.value.trim().slice(0, BOOKMARK_NOTE_LIMIT);
-    if (!note && !getBookmark(messageID)) {
-      hideNoteDialog();
-      return;
+    let existing = state.bookmarks.get(key);
+
+    if (!existing) {
+      const messageID = key.slice(key.lastIndexOf('|') + 1);
+      if (!state.sessionID || !messageID || key !== bookmarkKey(messageID) || !note) {
+        hideNoteDialog();
+        return;
+      }
+      existing = createBookmarkRecord(messageID, note);
+      state.bookmarks.set(key, existing);
+    } else {
+      existing.note = note;
+      existing.updatedAt = Date.now();
+      if (
+        existing.server === location.origin &&
+        existing.sessionID === state.sessionID &&
+        state.sessionTitle
+      ) {
+        existing.sessionTitle = state.sessionTitle;
+      }
     }
-    setBookmarkNote(messageID, note);
+
+    void persistBookmarks();
+    syncBookmarkUi();
     hideNoteDialog();
     showToast(note ? '备注已保存' : '备注已清空');
   }
@@ -2303,11 +2750,12 @@
     return turns;
   }
 
-  /** 生成单个 Q&A 轮次的 Markdown。 */
-  function formatSessionTurn(turn, bookmark) {
+  /** 生成单个 Q&A 轮次的 Markdown，headingLevel 用于全局导出时嵌套会话标题。 */
+  function formatSessionTurn(turn, bookmark, headingLevel = 2) {
     if (!turn?.user) return '';
+    const heading = '#'.repeat(Math.max(1, headingLevel));
     const lines = [];
-    lines.push(`## ${bookmark ? '⭐ ' : ''}用户`);
+    lines.push(`${heading} ${bookmark ? '⭐ ' : ''}用户`);
     const userText = userMessageText(turn.user);
     if (userText) lines.push(userText);
     lines.push(...userAttachmentLines(turn.user));
@@ -2326,7 +2774,7 @@
     }
 
     if (texts.length || toolCounts.size) {
-      lines.push('', '## 助手');
+      lines.push('', `${heading} 助手`);
       if (texts.length) lines.push(texts.join('\n\n'));
       if (toolCounts.size) {
         const summary = [...toolCounts.entries()]
@@ -2394,9 +2842,61 @@
     return `${header}\n\n---\n\n${sections.join('\n\n---\n\n')}\n`;
   }
 
+  /** 生成没有拉到完整消息时的书签 Markdown。 */
+  function formatBookmarkFallback(record, headingLevel = 2) {
+    const heading = '#'.repeat(Math.max(1, headingLevel));
+    const lines = [`${heading} ⭐ 用户`, getBookmarkPrompt(record)];
+    if (record.note) {
+      lines.push('', '> 备注：', ...record.note.split(/\r?\n/).map((line) => `> ${line}`));
+    }
+    return lines.join('\n').trim();
+  }
+
+  /** 生成全局书签 Markdown；sessionData 按会话 key 提供已加载的轮次。 */
+  function buildGlobalBookmarksMarkdown(records, sessionData) {
+    const groups = getBookmarkGroups(records);
+    if (groups.length === 0) return '';
+
+    const blocks = [];
+    for (const group of groups) {
+      const lines = [`## 会话：${group.title}`];
+      const url = getBookmarkURL(group.records[0], false);
+      lines.push('', `- 会话 ID：${group.sessionID}`);
+      if (url) lines.push(`- 来源：${url}`);
+      lines.push(`- 书签数量：${group.records.length}`);
+
+      const turnMap = sessionData.get(group.key)?.turnMap || null;
+      const items = [];
+      for (const record of group.records) {
+        const turn = turnMap?.get(record.messageID);
+        items.push(
+          turn
+            ? formatSessionTurn(turn, record, 3)
+            : formatBookmarkFallback(record, 3),
+        );
+      }
+
+      blocks.push(`${lines.join('\n')}\n\n${items.join('\n\n---\n\n')}`);
+    }
+
+    const header = [
+      '# 全局书签',
+      '',
+      `- 导出时间：${new Date().toLocaleString('zh-CN')}`,
+      `- 书签数量：${records.length}`,
+      `- 会话数量：${groups.length}`,
+    ].join('\n');
+
+    return `${header}\n\n---\n\n${blocks.join('\n\n---\n\n')}\n`;
+  }
+
   /** 把 Markdown 作为文件下载。 */
-  function downloadMarkdown(markdown, suffix) {
-    const title = (state.sessionTitle || 'opencode-session')
+  function downloadMarkdown(
+    markdown,
+    suffix,
+    baseTitle = state.sessionTitle || 'opencode-session',
+  ) {
+    const title = (baseTitle || 'opencode-session')
       .replace(/[\\/:*?"<>|\s]+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')
@@ -2434,45 +2934,85 @@
     syncBookmarkSelectionUi();
   }
 
-  /** 导出当前会话的书签及其回答。 */
-  async function exportBookmarksMarkdown(selectedIDs = null) {
-    if (state.exporting || !state.sessionID) return;
+  /** 以有限并发执行异步任务。 */
+  async function mapWithConcurrency(items, limit, worker) {
+    let next = 0;
+    const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const index = next;
+        next += 1;
+        await worker(items[index], index);
+      }
+    });
+    await Promise.all(runners);
+  }
 
-    const targets = selectedIDs instanceof Set ? new Set(selectedIDs) : null;
-    if (targets) {
-      for (const id of [...targets]) {
-        if (!getBookmark(id)) targets.delete(id);
-      }
-      if (targets.size === 0) {
-        showToast('请先勾选要导出的书签');
-        return;
-      }
-    } else if (getSessionBookmarks().length === 0) {
-      showToast('当前会话还没有书签');
+  /** 导出全局书签；selectedKeys 为空时导出全部。 */
+  async function exportBookmarksMarkdown(selectedKeys = null) {
+    if (state.exporting) return;
+
+    const all = getAllBookmarks();
+    const targets = selectedKeys instanceof Set ? selectedKeys : null;
+    const records = targets
+      ? all.filter((record) => targets.has(bookmarkRecordKey(record)))
+      : all;
+
+    if (records.length === 0) {
+      showToast(targets ? '请先勾选要导出的书签' : '还没有全局书签');
       return;
     }
 
     setExporting(true);
-    showToast(targets ? '正在整理选中书签…' : '正在整理书签…');
-    const sessionID = state.sessionID;
+    showToast(`正在整理 ${records.length} 条书签…`);
+
     try {
-      const messages = await fetchAllMessages(sessionID);
-      if (state.sessionID !== sessionID) return;
-      const turns = buildSessionTurns(messages);
-      const markdown = buildExportMarkdown(turns, true, targets);
+      const groups = getBookmarkGroups(records);
+      const sessionData = new Map();
+      const fetchable = groups.filter((group) => group.server === location.origin);
+      let done = 0;
+
+      await mapWithConcurrency(fetchable, 2, async (group) => {
+        try {
+          const messages = await fetchAllMessages(group.sessionID);
+          const turns = buildSessionTurns(messages);
+          sessionData.set(group.key, {
+            turnMap: new Map(
+              turns
+                .filter((turn) => turn.user?.id)
+                .map((turn) => [turn.user.id, turn]),
+            ),
+          });
+        } catch (error) {
+          warn('读取会话消息失败，将只导出书签文本', group.sessionID, error);
+        } finally {
+          done += 1;
+          if (done < fetchable.length) {
+            showToast(`正在整理 ${done}/${fetchable.length} 个会话…`);
+          }
+        }
+      });
+
+      const markdown = buildGlobalBookmarksMarkdown(records, sessionData);
       if (!markdown) {
         showToast('没有可导出的书签内容');
         return;
       }
-      downloadMarkdown(markdown, targets ? 'bookmarks-selected' : 'bookmarks');
-      showToast(targets ? '选中书签已导出' : '书签已导出');
-      log('已导出会话书签', {
-        sessionID,
-        count: targets ? targets.size : getSessionBookmarks().length,
+
+      downloadMarkdown(
+        markdown,
+        targets ? 'bookmarks-selected' : 'bookmarks-global',
+        'opencode',
+      );
+      showToast(
+        targets ? `已导出 ${records.length} 条选中书签` : `已导出 ${records.length} 条书签`,
+      );
+      log('已导出全局书签', {
+        count: records.length,
+        sessions: groups.length,
         selected: !!targets,
       });
     } catch (error) {
-      warn('导出书签失败', error);
+      warn('导出全局书签失败', error);
       showToast('导出书签失败，请重试');
     } finally {
       setExporting(false);
@@ -2481,7 +3021,11 @@
 
   /** 导出当前会话的完整 Markdown。 */
   async function exportSessionMarkdown() {
-    if (state.exporting || !state.sessionID) return;
+    if (state.exporting) return;
+    if (!state.sessionID) {
+      showToast('请先打开一个会话');
+      return;
+    }
 
     setExporting(true);
     showToast('正在整理会话…');
@@ -2943,17 +3487,27 @@
     }
   }
 
-  /** 从地址栏 hash 同步 active 状态。 */
-  function applyHashActive() {
+  /** 从地址栏读取目标消息 ID。 */
+  function getHashMessageID() {
     const match = location.hash.match(MESSAGE_HASH_RE);
-    if (!match) return;
-    let id = match[1];
+    if (!match) return null;
     try {
-      id = decodeURIComponent(id);
+      return decodeURIComponent(match[1]);
     } catch {
-      // 保留原始值
+      return match[1];
     }
+  }
+
+  /** 从地址栏 hash 同步 active 状态，必要时触发一次定位。 */
+  function applyHashActive(shouldJump = false) {
+    const id = getHashMessageID();
+    if (!id) return;
+
     if (state.buttons.has(id)) setActive(id, true);
+    if (!shouldJump || !state.sessionID || state.pendingHashJump === id) return;
+
+    state.pendingHashJump = id;
+    void jumpTo(id);
   }
 
   /** 找到包含时间线虚拟内容的滚动容器。 */
@@ -3554,6 +4108,26 @@
     });
   }
 
+  /** 在非会话页面把全局书签入口固定到右下角。 */
+  function positionStandaloneBookmarkTrigger() {
+    const trigger = state.bookmarkTrigger;
+    if (!trigger) return;
+
+    if (state.glmLauncher) state.glmLauncher.hidden = true;
+    hideAiMenu();
+
+    const size = 32;
+    const margin = 16;
+    trigger.style.left = `${Math.round(
+      Math.max(8, window.innerWidth - size - margin),
+    )}px`;
+    trigger.style.top = `${Math.round(
+      Math.max(8, window.innerHeight - size - margin),
+    )}px`;
+    delete trigger.dataset.inside;
+    trigger.hidden = false;
+  }
+
   /** 计算悬浮按钮位置；优先放在输入框右侧并底部对齐，空间不足时放到右上角内侧。 */
   function positionGlmLauncher(composer = findActiveComposer()) {
     const button = state.glmLauncher;
@@ -3561,7 +4135,11 @@
 
     const form = composer?.form;
     if (!form || !form.isConnected) {
-      hideGlmLauncher();
+      if (!parseSessionID()) {
+        positionStandaloneBookmarkTrigger();
+      } else {
+        hideGlmLauncher();
+      }
       return;
     }
 
@@ -3627,7 +4205,11 @@
 
     const form = composer?.form;
     if (!form) {
-      hideGlmLauncher();
+      if (!parseSessionID()) {
+        positionStandaloneBookmarkTrigger();
+      } else {
+        hideGlmLauncher();
+      }
       return;
     }
 
@@ -4233,6 +4815,7 @@
     hideNoteDialog();
     state.bookmarkSelection.clear();
     if (state.bookmarksSearch) state.bookmarksSearch.value = '';
+    if (state.bookmarksSessionFilter) state.bookmarksSessionFilter.value = '';
     hideJumpOverlay();
     hideToast();
     hidePreview();
@@ -4245,7 +4828,9 @@
     state.items = [];
     state.itemIDs = new Set();
     state.activeID = null;
+    state.pendingHashJump = null;
     resetRail();
+    positionBookmarksTrigger();
     log('已离开会话页面');
   }
 
@@ -4257,6 +4842,7 @@
     state.items = [];
     state.itemIDs = new Set();
     state.activeID = null;
+    state.pendingHashJump = null;
     resetRail();
     ensureOptimizeButton();
 
@@ -4304,6 +4890,11 @@
       ensureOptimizeButton();
       setupPolling();
       scheduleActiveUpdate();
+
+      // 从全局书签或外部链接带着 #message- 进入时，等时间线渲染后再定位一次
+      window.setTimeout(() => {
+        if (state.sessionID === sessionID) applyHashActive(true);
+      }, 120);
     } catch (error) {
       if (controller.signal.aborted) return;
 
@@ -4413,9 +5004,9 @@
     }
   }
 
-  /** hash 变化时只同步 active，不重新加载会话。 */
+  /** hash 变化时同步 active，并在需要时定位到目标消息。 */
   function onHashEvent() {
-    applyHashActive();
+    applyHashActive(true);
     scheduleActiveUpdate();
   }
 

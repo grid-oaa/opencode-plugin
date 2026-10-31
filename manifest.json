@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "OpenCode 提问导航",
-  "version": "0.3.0",
-  "description": "在 opencode pair 网页右侧显示提问导航，快速定位历史消息，并提供多个网页版 AI 对话侧栏和提示词优化。",
+  "version": "0.4.0",
+  "description": "在 opencode pair 网页右侧显示提问导航，快速定位历史消息，提供全局会话书签、多个网页版 AI 对话侧栏和提示词优化。",
   "minimum_chrome_version": "116",
   "permissions": [
     "sidePanel",
