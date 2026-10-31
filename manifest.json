@@ -25,7 +25,8 @@
       ],
       "js": [
         "ai-sites.js",
-        "content.js"
+        "content.js",
+        "session-reference.js"
       ],
       "run_at": "document_idle"
     }
