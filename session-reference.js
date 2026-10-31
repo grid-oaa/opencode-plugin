@@ -235,6 +235,9 @@
       projectMenu.replaceChildren();
       const projectActivity = new Map(projects.map((project) => [project.id, project.time?.active]));
       sortedProjectIDs = [...projectIDs].sort((a, b) => {
+        if (a === b) return 0;
+        if (currentProject && a === currentProject) return -1;
+        if (currentProject && b === currentProject) return 1;
         const aTime = projectActivity.get(a);
         const bTime = projectActivity.get(b);
         const aValid = Number.isFinite(aTime);
